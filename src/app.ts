@@ -46,7 +46,7 @@ app.use(generalLimiter);
 app.get('/', (_req, res) => {
   res.status(200).json({
     success: true,
-    message: 'Server is up and running',
+    message: 'Server is up and running updated',
   });
 });
 
