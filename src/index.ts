@@ -22,12 +22,6 @@ process.on("unhandledRejection", (reason: unknown, promise: Promise<any>) => {
 
 async function startServer() {
   try {
-    // running the seeding script
-    seed().catch((error) => {
-      console.error("Seed script error:", error);
-      process.exit(1);
-    });
-
     // Connect to MongoDB
     console.log("🔄 Connecting to MongoDB...");
     await connectDB();
