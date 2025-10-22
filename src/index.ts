@@ -3,6 +3,7 @@ import app from "./app";
 import { connectDB, closeDB } from "./db/client"; // ✅ MongoDB versions
 import { authService } from "./modules/auth/auth.service";
 import env from "./config/env";
+import seed from "./db/seed";
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (error: Error) => {
@@ -21,6 +22,12 @@ process.on("unhandledRejection", (reason: unknown, promise: Promise<any>) => {
 
 async function startServer() {
   try {
+    // running the seeding script
+    seed().catch((error) => {
+      console.error("Seed script error:", error);
+      process.exit(1);
+    });
+
     // Connect to MongoDB
     console.log("🔄 Connecting to MongoDB...");
     await connectDB();
