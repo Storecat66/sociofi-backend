@@ -66,17 +66,23 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.post('/webhook/participations', (req, res) => {
+app.post("/webhook/participations", (req, res) => {
   const event = req.body;
-  console.log('Received Easypromos webhook:', event);
+  console.log("📩 Received Easypromos webhook:", event);
 
-  // The event might contain e.g. promotionId, user details, participation timestamp
-  // You’ll inspect the payload and handle it
-  // e.g., store in your DB, trigger some action, notify UI, etc.
+  // Get the Socket.IO instance
+  const io = req.app.get("io");
 
-  // Respond 200 OK quickly
-  res.status(200).json({ received: true , message: 'Easypromos webhook received successfully' , event });
+  // Emit to all connected clients
+  io.emit("new_participant", event);
+
+  // Send acknowledgment to Easypromos
+  res.status(200).json({
+    success: true,
+    message: "Easypromos webhook received successfully",
+  });
 });
+
 
 // API routes
 app.use("/api/auth", authRoutes);

@@ -1,30 +1,44 @@
 import "dotenv/config";
+import http from "http";
+import { Server } from "socket.io";
 import app from "./app";
-import { connectDB, closeDB } from "./db/client"; // ✅ MongoDB versions
-import { authService } from "./modules/auth/auth.service";
+import { connectDB, closeDB } from "./db/client";
 import env from "./config/env";
+import { authService } from "./modules/auth/auth.service";
 
-// Handle uncaught exceptions
-process.on("uncaughtException", (error: Error) => {
-  console.error("💥 UNCAUGHT EXCEPTION! Shutting down...");
-  console.error(error.name, error.message);
-  process.exit(1);
-});
-
-// Handle unhandled promise rejections
-process.on("unhandledRejection", (reason: unknown, promise: Promise<any>) => {
-  console.error("💥 UNHANDLED REJECTION! Shutting down...");
-  console.error("Reason:", reason);
-  console.error("Promise:", promise);
-  process.exit(1);
-});
+let io: Server;
 
 async function startServer() {
   try {
-    // Connect to MongoDB
     console.log("🔄 Connecting to MongoDB...");
     await connectDB();
     console.log("✅ MongoDB connection established");
+
+    // Create HTTP server
+    const server = http.createServer(app);
+
+    // Initialize Socket.IO server
+    io = new Server(server, {
+      cors: {
+        origin: ["https://campaignpanel.socio-fi.com", "http://localhost:5173"],
+        methods: ["GET", "POST"],
+        credentials: true,
+      },
+    });
+
+    // Make io globally accessible (optional)
+    app.set("io", io);
+    console.log("✅ Socket.IO server initialized");
+
+    io.on("connection", (socket) => {
+      console.log(`⚡ Client connected: ${socket.id}`);
+      socket.on("disconnect", () => console.log(`❌ Client disconnected: ${socket.id}`));
+    });
+
+    // Start HTTP + WebSocket server
+    server.listen(env.PORT, () => {
+      console.log(`🚀 Server running on port ${env.PORT}`);
+    });
 
     // Token cleanup job
     setInterval(async () => {
@@ -33,54 +47,23 @@ async function startServer() {
       } catch (error) {
         console.error("Token cleanup error:", error);
       }
-    }, 60 * 60 * 1000); // every 1 hour
+    }, 60 * 60 * 1000);
 
-    // Start the HTTP server
-    const server = app.listen(env.PORT, () => {
-      console.log(`🚀 Server running on port ${env.PORT}`);
-      console.log(`🌍 Environment: ${env.NODE_ENV}`);
-      console.log(`🔗 CORS origin: ${env.CORS_ORIGIN}`);
-      console.log("📚 API Documentation:");
-      console.log("  POST /api/auth/login");
-      console.log("  POST /api/auth/refresh");
-      console.log("  POST /api/auth/logout");
-      console.log("  GET  /api/users");
-      console.log("  PATCH /api/users/:id");
-      console.log("  GET  /health");
-    });
-
-    // Graceful shutdown handler
-    const gracefulShutdown = async (signal: string) => {
-      console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
-
-      server.close(async () => {
-        console.log("👋 HTTP server closed");
-
-        try {
-          await closeDB(); // ✅ close MongoDB connection
-          console.log("💾 MongoDB connection closed");
-        } catch (error) {
-          console.error("Error closing MongoDB connection:", error);
-        }
-
-        console.log("✅ Graceful shutdown completed");
-        process.exit(0);
-      });
-
-      // Force shutdown after timeout
-      setTimeout(() => {
-        console.error("⚠️  Forced shutdown after timeout");
-        process.exit(1);
-      }, 10_000);
-    };
-
-    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", async () => gracefulShutdown(server));
+    process.on("SIGINT", async () => gracefulShutdown(server));
   } catch (error) {
     console.error("❌ Failed to start server:", error);
     process.exit(1);
   }
 }
 
-// Start server
+async function gracefulShutdown(server: http.Server) {
+  console.log("\n🛑 Graceful shutdown started...");
+  server.close(async () => {
+    await closeDB();
+    console.log("✅ Shutdown complete");
+    process.exit(0);
+  });
+}
+
 startServer();
