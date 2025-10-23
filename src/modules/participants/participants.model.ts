@@ -41,7 +41,7 @@ export function sanitizeParticipant(participant: Participant): Participant {
       ...participant.prize,
       created: formatDateSafely(participant.prize.created),
     } : participant.prize,
-  };
+  } as Participant;
 }
 
 /**
@@ -79,7 +79,7 @@ export function getSearchableText(participant: Participant): string {
     participant.user.nickname,
     participant.user.phone,
     participant.user.country,
-    participant.prize.code,
+    participant?.prize?.code,
     ...participant.requirement.data.map(req => req.value),
   ];
 
@@ -151,8 +151,8 @@ export function formatParticipantForExport(participant: Participant): ExportPart
     country: participant.user.country,
     participationDate: new Date(participant.created).toLocaleDateString(),
     orderNumber,
-    prizeCode: participant.prize.code,
-    prizeName: participant.prize.prize_type.name,
+    prizeCode: participant?.prize?.code ?? '',
+    prizeName: participant?.prize?.prize_type?.name ?? '',
     status: getParticipantStatus(participant),
     points: parseInt(participant.points) || 0,
   };
