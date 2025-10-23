@@ -1,5 +1,6 @@
 import axios, { AxiosResponse } from "axios";
 import { sanitizeParticipants } from "./participants.model";
+import env from "../../config/env";
 
 // TypeScript interfaces for EasyPromos API response
 export interface Participant {
@@ -59,7 +60,7 @@ export interface Participant {
       };
     };
   };
-  prize: {
+  prize?: {
     id: string;
     prize_type: {
       id: string;
@@ -93,11 +94,12 @@ export interface GetParticipantsOptions {
   limit?: number;
   offset?: number;
   search?: string;
-  order?: "created_asc" | "created_desc";
+  sort?: "created_asc" | "created_desc";
   country?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  status?: string;
+  date?: string; // ✅ single-date filter (YYYY-MM-DD)
+  dateFrom?: string; // ✅ date range start (YYYY-MM-DD)
+  dateTo?: string; // ✅ date range end (YYYY-MM-DD)
+  status?: "active" | "inactive";
 }
 
 export interface GetParticipantsResult {
@@ -109,64 +111,104 @@ export interface GetParticipantsResult {
 }
 
 export class ParticipantsService {
-  private readonly baseUrl =
-    "https://api.easypromosapp.com/v2/participations/999707";
-  private readonly apiKey = process.env.EASY_PROMO_API_KEY;
-
-  constructor() {
-    if (!this.apiKey) {
-      throw new Error("EASY_PROMO_API_KEY is required");
-    }
-  }
-
   /**
    * Get participants from EasyPromos API with pagination and filtering
    */
   async getParticipants(
-    options: GetParticipantsOptions = {}
+    options: GetParticipantsOptions = {},
+    promo_id?: string
   ): Promise<GetParticipantsResult> {
     const {
       limit = 30,
       offset = 0,
       search,
-      order = "created_desc",
+      sort = "created_desc",
       country,
+      date,
       dateFrom,
       dateTo,
       status,
     } = options;
 
     try {
-      // EasyPromos API doesn't support limit/search, so fetch all and filter locally
-      const response: AxiosResponse<EasyPromosApiResponse> = await axios.get(
-        `${this.baseUrl}?format=full&order=${order}`,
+      // ✅ Fetch all participants (EasyPromos doesn't support filtering, so get all)
+      const response: AxiosResponse<any> = await axios.get(
+        `${env.EASY_PROMO_PARTICIPATION_FETCH_URL}/${promo_id}?format=full`,
         {
           headers: {
-            Authorization: `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${env.EASY_PROMO_API_KEY}`,
             "Content-Type": "application/json",
           },
           timeout: 30000,
         }
       );
 
-      const allItems = response.data.items;
+      // ✅ Validate response
+      if (!response.data || !Array.isArray(response.data.items)) {
+        console.error("Invalid API response structure:", response.data);
+        throw new Error("Invalid response format from EasyPromos API");
+      }
+
+      const allItems = response.data.items.filter(
+        (item: any) => item && typeof item === "object"
+      );
+
+      console.log(`Fetched ${allItems.length} participants from EasyPromos API`);
 
       // ✅ Step 1: Filter by country, date, and status
-      let filteredItems = allItems.filter((item) => {
+      let filteredItems = allItems.filter((item: any) => {
         let keep = true;
 
-        if (
-          country &&
-          item.user.country.toLowerCase() !== country.toLowerCase()
-        )
-          keep = false;
+        // 🔹 Filter by country (case-insensitive)
+        if (country && country.trim()) {
+          const itemCountry = item.user?.country?.toLowerCase()?.trim();
+          const filterCountry = country.toLowerCase().trim();
+          if (!itemCountry || itemCountry !== filterCountry) {
+            keep = false;
+          }
+        }
 
-        if (dateFrom && new Date(item.created) < new Date(dateFrom))
-          keep = false;
-        if (dateTo && new Date(item.created) > new Date(dateTo)) keep = false;
+        // 🔹 Filter by specific date (YYYY-MM-DD format)
+        if (date && date.trim()) {
+          try {
+            const itemDate = new Date(item.created).toISOString().split("T")[0];
+            if (itemDate !== date.trim()) {
+              keep = false;
+            }
+          } catch (error) {
+            console.warn("Invalid date in participant:", item.created);
+            keep = false;
+          }
+        }
 
+        // 🔹 Filter by date range (dateFrom to dateTo)
+        if (dateFrom || dateTo) {
+          try {
+            const itemDate = new Date(item.created);
+            
+            if (dateFrom) {
+              const fromDate = new Date(dateFrom);
+              if (itemDate < fromDate) {
+                keep = false;
+              }
+            }
+            
+            if (dateTo) {
+              const toDate = new Date(dateTo);
+              toDate.setHours(23, 59, 59, 999); // Include the entire end date
+              if (itemDate > toDate) {
+                keep = false;
+              }
+            }
+          } catch (error) {
+            console.warn("Invalid date filtering:", item.created, dateFrom, dateTo);
+            keep = false;
+          }
+        }
+
+        // 🔹 Filter by user status
         if (status) {
-          const isActive = item.user.status === "1";
+          const isActive = item.user?.status === "1";
           if (status === "active" && !isActive) keep = false;
           if (status === "inactive" && isActive) keep = false;
         }
@@ -174,29 +216,51 @@ export class ParticipantsService {
         return keep;
       });
 
-      // ✅ Step 2: Local Search (by name, email, phone, or order number)
+      console.log(`After filtering: ${filteredItems.length} participants`);
+
+      // ✅ Step 2: Local search (name, email, phone, order)
       if (search && search.trim().length > 0) {
         const query = search.trim().toLowerCase();
-        filteredItems = filteredItems.filter((p) => {
-          const user = p.user;
+        filteredItems = filteredItems.filter((p: any) => {
+          const user = p.user || {};
           const orderValue =
             p.requirement?.data?.[0]?.value?.toLowerCase?.() || "";
+          
+          const searchableFields = [
+            user.email?.toLowerCase(),
+            user.nickname?.toLowerCase(), 
+            user.first_name?.toLowerCase(),
+            user.last_name?.toLowerCase(),
+            user.phone?.toLowerCase(),
+            orderValue,
+            p.id?.toLowerCase(),
+            user.id?.toLowerCase()
+          ].filter(Boolean); // Remove null/undefined values
 
-          return (
-            user?.email?.toLowerCase().includes(query) ||
-            user?.nickname?.toLowerCase().includes(query) ||
-            user?.first_name?.toLowerCase().includes(query) ||
-            user?.phone?.toLowerCase().includes(query) ||
-            orderValue.includes(query)
+          return searchableFields.some(field => 
+            field && field.includes(query)
           );
         });
       }
 
-      // ✅ Step 3: Sort manually (EasyPromos order param doesn’t guarantee sort)
-      filteredItems.sort((a, b) => {
-        const dateA = new Date(a.created).getTime();
-        const dateB = new Date(b.created).getTime();
-        return order === "created_asc" ? dateA - dateB : dateB - dateA;
+      console.log(`After search filtering: ${filteredItems.length} participants`);
+
+      // ✅ Step 3: Manual sort (by created date)
+      filteredItems.sort((a: any, b: any) => {
+        try {
+          const dateA = new Date(a.created).getTime();
+          const dateB = new Date(b.created).getTime();
+          
+          // Handle invalid dates
+          if (isNaN(dateA) && isNaN(dateB)) return 0;
+          if (isNaN(dateA)) return 1;
+          if (isNaN(dateB)) return -1;
+          
+          return sort === "created_asc" ? dateA - dateB : dateB - dateA;
+        } catch (error) {
+          console.warn("Error sorting participants:", error);
+          return 0;
+        }
       });
 
       // ✅ Step 4: Manual pagination
@@ -207,7 +271,9 @@ export class ParticipantsService {
 
       const paginatedItems = filteredItems.slice(offset, offset + limit);
 
-      // ✅ Step 5: Sanitize before returning
+      console.log(`Pagination: page ${page}/${totalPages}, showing ${paginatedItems.length}/${total} participants`);
+
+      // ✅ Step 5: Return sanitized data
       return {
         participants: sanitizeParticipants(paginatedItems),
         hasNext,
@@ -215,17 +281,15 @@ export class ParticipantsService {
         page,
         totalPages,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching participants from EasyPromos API:", error);
 
       if (axios.isAxiosError(error)) {
-        const axiosError = error as any;
-        if (axiosError.response?.status === 401)
+        const status = error.response?.status;
+        if (status === 401)
           throw new Error("Invalid API key or unauthorized access");
-        if (axiosError.response?.status === 404)
-          throw new Error("Promotion not found");
-        if (axiosError.response?.status === 429)
-          throw new Error("Rate limit exceeded");
+        if (status === 404) throw new Error("Promotion not found");
+        if (status === 429) throw new Error("Rate limit exceeded");
       }
 
       throw new Error("Failed to fetch participants data");
@@ -235,9 +299,12 @@ export class ParticipantsService {
   /**
    * Get participant by ID
    */
-  async getParticipantById(participantId: string): Promise<Participant | null> {
+  async getParticipantById(
+    participantId: string, 
+    promo_id?: string
+  ): Promise<Participant | null> {
     try {
-      const result = await this.getParticipants({ limit: 100 });
+      const result = await this.getParticipants({ limit: 1000 }, promo_id);
       return result.participants.find((p) => p.id === participantId) || null;
     } catch (error) {
       console.error("Error fetching participant by ID:", error);
@@ -250,18 +317,19 @@ export class ParticipantsService {
    */
   async searchParticipants(
     query: string,
-    options: Omit<GetParticipantsOptions, "search"> = {}
+    options: Omit<GetParticipantsOptions, "search"> = {},
+    promo_id?: string
   ): Promise<GetParticipantsResult> {
     return this.getParticipants({
       ...options,
       search: query,
-    });
+    }, promo_id);
   }
 
   /**
    * Get participants statistics
    */
-  async getParticipantsStats(): Promise<{
+  async getParticipantsStats(promo_id?: string): Promise<{
     totalParticipants: number;
     totalCountries: number;
     topCountries: Array<{ country: string; count: number }>;
@@ -269,7 +337,7 @@ export class ParticipantsService {
   }> {
     try {
       // Get a large sample to calculate stats
-      const result = await this.getParticipants({ limit: 100 });
+      const result = await this.getParticipants({ limit: 1000 }, promo_id);
       const participants = result.participants;
 
       // Count countries
@@ -307,9 +375,9 @@ export class ParticipantsService {
   /**
    * Get unique countries from participants
    */
-  async getCountries(): Promise<string[]> {
+  async getCountries(promo_id?: string): Promise<string[]> {
     try {
-      const result = await this.getParticipants({ limit: 100 });
+      const result = await this.getParticipants({ limit: 1000 }, promo_id);
       const countries = new Set(
         result.participants.map((p) => p.user.country).filter(Boolean)
       );

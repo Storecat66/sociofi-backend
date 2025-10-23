@@ -116,6 +116,7 @@ export class UserService {
     campaign?: string;
     password: string;
     role: string;
+    assigned_promotions?: string[];
   }) {
     const password_hash = await argon2.hash(userData.password, {
       type: argon2.argon2id,

@@ -164,6 +164,7 @@ export class UserController {
       prize_type: z.string().optional(),
       prize_date: z.coerce.date().optional(),
       campaign: z.string().optional(),
+      assigned_promotions: z.array(z.string()).optional(),
     }).parse(req.body);
 
     // Transform to match service expectations (remove undefined from optional types)
@@ -176,6 +177,7 @@ export class UserController {
       prize_date?: Date;
       campaign?: string;
       password: string;
+      assigned_promotions?: string[];
       role: UserRole;
     } = {
       name: validatedData.name,
@@ -187,6 +189,7 @@ export class UserController {
       ...(validatedData.prize_type !== undefined && { prize_type: validatedData.prize_type }),
       ...(validatedData.prize_date !== undefined && { prize_date: validatedData.prize_date }),
       ...(validatedData.campaign !== undefined && { campaign: validatedData.campaign }),
+      ...(validatedData.assigned_promotions !== undefined && { assigned_promotions: validatedData.assigned_promotions }),
     };
 
     const newUser = await userService.createUser(newUserData);

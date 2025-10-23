@@ -10,6 +10,7 @@ export interface IUser extends Document {
   campaign?: string;
   password_hash: string;
   role: "admin" | "manager" | "viewer";
+  assigned_promotions: string[];
   is_active: boolean;
   token_version: number;
   created_at: Date;
@@ -26,7 +27,8 @@ const userSchema = new Schema<IUser>(
     prize_date: { type: Date },
     campaign: { type: String },
     password_hash: { type: String, required: true },
-    role: { type: String, enum: ["admin", "manager", "viewer"], default: "viewer" },
+    role: { type: String, enum: ["admin", "manager", "viewer"],default: "viewer" },
+    assigned_promotions: { type: [String], default: [] },
     is_active: { type: Boolean, default: true },
     token_version: { type: Number, default: 0 },
   },

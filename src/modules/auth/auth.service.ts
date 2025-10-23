@@ -61,6 +61,8 @@ export class AuthService {
         email: user.email,
         role: user.role,
         is_active: user.is_active,
+        phone_number: user.phone_number,
+        assigned_promotions: user.assigned_promotions,
         created_at: user.created_at,
         updated_at: user.updated_at,
       } as any,

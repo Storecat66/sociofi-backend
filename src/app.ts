@@ -9,6 +9,7 @@ import userRoutes from "./modules/users/user.routes";
 import exportRoutes from "./modules/export_user_data/export_user_data.route";
 import participantsRoutes from "./modules/participants/participants.route";
 import env from "./config/env";
+import promotionsRoutes from "./modules/promotions/promotions.route";
 
 const app = express();
 
@@ -89,6 +90,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/participants", participantsRoutes);
+app.use("/api/promotions", promotionsRoutes);
 
 // 404 handler for undefined routes
 app.use(notFoundHandler);

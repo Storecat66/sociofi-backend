@@ -13,6 +13,9 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().url().default('http://localhost:5173'),
   MONGO_URI: z.string().url(),
   MONGO_DB_NAME: z.string().default('admin_db'),
+  EASY_PROMO_PROMOTION_FETCH_URL: z.string().url(),
+  EASY_PROMO_API_KEY: z.string().min(1),
+  EASY_PROMO_PARTICIPATION_FETCH_URL: z.string().url(),
 });
 
 const parseEnv = () => {

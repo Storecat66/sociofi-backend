@@ -9,11 +9,12 @@ const getParticipantsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(30),
   offset: z.coerce.number().min(0).optional().default(0),
   search: z.string().min(1).optional(),
-  order: z.enum(['created_asc', 'created_desc']).optional().default('created_desc'),
+  sort: z.enum(['created_asc', 'created_desc']).optional().default('created_desc'),
   country: z.string().min(2).max(2).optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  status: z.string().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
 });
 
 const participantIdParamsSchema = z.object({
@@ -24,10 +25,12 @@ const searchParticipantsQuerySchema = z.object({
   q: z.string().min(1),
   limit: z.coerce.number().min(1).max(100).optional().default(30),
   offset: z.coerce.number().min(0).optional().default(0),
-  order: z.enum(['created_asc', 'created_desc']).optional().default('created_desc'),
+  sort: z.enum(['created_asc', 'created_desc']).optional().default('created_desc'),
   country: z.string().min(2).max(2).optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  status: z.enum(['active', 'inactive']).optional(),
 });
 
 export class ParticipantsController {
@@ -37,23 +40,25 @@ export class ParticipantsController {
    */
   getParticipants = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const query = getParticipantsQuerySchema.parse(req.query);
+    const promo_id = req.params.promo_id;
 
     // Filter out undefined values to match strict optional types
     const options: any = {
       limit: query.limit,
       offset: query.offset,
-      order: query.order,
+      sort: query.sort,
     };
     
     if (query.search !== undefined) options.search = query.search;
     if (query.country !== undefined) options.country = query.country;
+    if (query.date !== undefined) options.date = query.date;
     if (query.dateFrom !== undefined) options.dateFrom = query.dateFrom;
     if (query.dateTo !== undefined) options.dateTo = query.dateTo;
     if (query.status !== undefined) options.status = query.status;
 
     console.log('Fetching participants with options:', options);
 
-    const result = await participantsService.getParticipants(options);
+    const result = await participantsService.getParticipants(options, promo_id);
 
     // Transform to match the expected paginated response format
     const response = {
@@ -79,8 +84,9 @@ export class ParticipantsController {
    */
   getParticipantById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = participantIdParamsSchema.parse(req.params);
+    const promo_id = req.params.promo_id;
     
-    const participant = await participantsService.getParticipantById(id);
+    const participant = await participantsService.getParticipantById(id, promo_id);
     
     if (!participant) {
       ResponseBuilder.error(res, 'Participant not found', 404);
@@ -96,19 +102,22 @@ export class ParticipantsController {
    */
   searchParticipants = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const query = searchParticipantsQuerySchema.parse(req.query);
+    const promo_id = req.params.promo_id;
 
     // Filter out undefined values to match strict optional types
     const options: any = {
       limit: query.limit,
       offset: query.offset,
-      order: query.order,
+      sort: query.sort,
     };
     
     if (query.country !== undefined) options.country = query.country;
+    if (query.date !== undefined) options.date = query.date;
     if (query.dateFrom !== undefined) options.dateFrom = query.dateFrom;
     if (query.dateTo !== undefined) options.dateTo = query.dateTo;
+    if (query.status !== undefined) options.status = query.status;
 
-    const result = await participantsService.searchParticipants(query.q, options);
+    const result = await participantsService.searchParticipants(query.q, options, promo_id);
 
     const response = {
       success: true,
@@ -132,8 +141,9 @@ export class ParticipantsController {
    * GET /api/participants/stats
    * Get participants statistics
    */
-  getParticipantsStats = asyncHandler(async (_req: Request, res: Response): Promise<void> => {
-    const stats = await participantsService.getParticipantsStats();
+  getParticipantsStats = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const promo_id = req.params.promo_id;
+    const stats = await participantsService.getParticipantsStats(promo_id);
     
     ResponseBuilder.success(res, stats, 'Participants statistics retrieved successfully');
   });
@@ -142,8 +152,9 @@ export class ParticipantsController {
    * GET /api/participants/countries
    * Get list of unique countries from participants
    */
-  getCountries = asyncHandler(async (_req: Request, res: Response): Promise<void> => {
-    const countries = await participantsService.getCountries();
+  getCountries = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const promo_id = req.params.promo_id;
+    const countries = await participantsService.getCountries(promo_id);
     
     ResponseBuilder.success(res, countries, 'Countries retrieved successfully');
   });
@@ -152,15 +163,16 @@ export class ParticipantsController {
    * GET /api/participants/filters
    * Get available filter options
    */
-  getFilterOptions = asyncHandler(async (_req: Request, res: Response): Promise<void> => {
-    const countries = await participantsService.getCountries();
+  getFilterOptions = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const promo_id = req.params.promo_id;
+    const countries = await participantsService.getCountries(promo_id);
     
     const filterOptions = {
       countries: countries.map(country => ({
         value: country,
         label: country,
       })),
-      orders: [
+      sorts: [
         { value: 'created_desc', label: 'Newest First' },
         { value: 'created_asc', label: 'Oldest First' },
       ],

@@ -38,7 +38,7 @@ router.get('/filters', requireAuth, requireManagerOrAdmin, participantsControlle
  * @desc    Get paginated list of participants with filtering and sorting
  * @access  Private (Manager/Admin only)
  */
-router.get('/', requireAuth, requireManagerOrAdmin, userLimiter, participantsController.getParticipants);
+router.get('/fetch_by_promo/:promo_id', requireAuth, userLimiter, participantsController.getParticipants);
 
 /**
  * @route   GET /api/participants/:id

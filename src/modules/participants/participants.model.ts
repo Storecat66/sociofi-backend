@@ -4,25 +4,43 @@ import { Participant } from './participants.service';
  * Transform participant data for API response
  * Removes sensitive data and formats dates
  */
+/**
+ * Safely format date to ISO string
+ */
+function formatDateSafely(dateValue: string | null | undefined): string {
+  if (!dateValue) return new Date().toISOString(); // fallback to current date
+  try {
+    const date = new Date(dateValue);
+    return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  } catch (error) {
+    console.warn('Invalid date format:', dateValue);
+    return new Date().toISOString(); // fallback to current date
+  }
+}
+
 export function sanitizeParticipant(participant: Participant): Participant {
+  if (!participant) {
+    throw new Error('Participant data is required');
+  }
+
   return {
     ...participant,
     // Format dates to ISO strings if needed
-    created: new Date(participant.created).toISOString(),
-    user: {
+    created: formatDateSafely(participant.created),
+    user: participant.user ? {
       ...participant.user,
-      created: new Date(participant.user.created).toISOString(),
+      created: formatDateSafely(participant.user.created),
       // Remove sensitive user agent details if needed
-      meta_data: {
+      meta_data: participant.user.meta_data ? {
         ...participant.user.meta_data,
         // Keep IP for analytics but could be masked in production
         ip: participant.user.meta_data.ip,
-      },
-    },
-    prize: {
+      } : participant.user.meta_data,
+    } : participant.user,
+    prize: participant.prize ? {
       ...participant.prize,
-      created: new Date(participant.prize.created).toISOString(),
-    },
+      created: formatDateSafely(participant.prize.created),
+    } : participant.prize,
   };
 }
 
@@ -30,7 +48,24 @@ export function sanitizeParticipant(participant: Participant): Participant {
  * Transform multiple participants for API response
  */
 export function sanitizeParticipants(participants: Participant[]): Participant[] {
-  return participants.map(sanitizeParticipant);
+  if (!Array.isArray(participants)) {
+    console.error('Invalid participants data: expected array, got:', typeof participants);
+    return [];
+  }
+
+  return participants
+    .filter(participant => participant && typeof participant === 'object')
+    .map((participant, index) => {
+      try {
+        return sanitizeParticipant(participant);
+      } catch (error) {
+        console.error(`Error sanitizing participant at index ${index}:`, error);
+        console.error('Participant data:', participant);
+        // Skip this participant if it can't be sanitized
+        return null;
+      }
+    })
+    .filter((participant): participant is Participant => participant !== null);
 }
 
 /**
