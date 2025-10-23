@@ -184,6 +184,14 @@ export class AuthService {
       meta,
     });
   }
+
+  /**
+   * Request password reset (stub implementation)
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    // In a real implementation, generate a reset token, save it, and send email
+    console.log(`Password reset requested for email: ${email}`);
+  }
 }
 
 export const authService = new AuthService();

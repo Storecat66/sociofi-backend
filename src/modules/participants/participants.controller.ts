@@ -6,12 +6,11 @@ import { asyncHandler } from '../../middleware/error';
 
 // Validation schemas
 const getParticipantsQuerySchema = z.object({
-  limit: z.coerce.number().min(1).max(100).optional().default(30),
-  offset: z.coerce.number().min(0).optional().default(0),
+  limit: z.coerce.number().min(1).max(100).optional().default(10),
+  page: z.coerce.number().min(1).optional().default(1),
   search: z.string().min(1).optional(),
   sort: z.enum(['created_asc', 'created_desc']).optional().default('created_desc'),
   country: z.string().min(2).max(2).optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   status: z.enum(['active', 'inactive']).optional(),
@@ -23,11 +22,10 @@ const participantIdParamsSchema = z.object({
 
 const searchParticipantsQuerySchema = z.object({
   q: z.string().min(1),
-  limit: z.coerce.number().min(1).max(100).optional().default(30),
-  offset: z.coerce.number().min(0).optional().default(0),
+  limit: z.coerce.number().min(1).max(100).optional().default(10),
+  page: z.coerce.number().min(1).optional().default(1),
   sort: z.enum(['created_asc', 'created_desc']).optional().default('created_desc'),
   country: z.string().min(2).max(2).optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   status: z.enum(['active', 'inactive']).optional(),
@@ -42,21 +40,24 @@ export class ParticipantsController {
     const query = getParticipantsQuerySchema.parse(req.query);
     const promo_id = req.params.promo_id;
 
+    // Convert page to offset for internal service
+    const offset = (query.page - 1) * query.limit;
+
     // Filter out undefined values to match strict optional types
     const options: any = {
       limit: query.limit,
-      offset: query.offset,
+      offset: offset,
       sort: query.sort,
     };
     
     if (query.search !== undefined) options.search = query.search;
     if (query.country !== undefined) options.country = query.country;
-    if (query.date !== undefined) options.date = query.date;
     if (query.dateFrom !== undefined) options.dateFrom = query.dateFrom;
     if (query.dateTo !== undefined) options.dateTo = query.dateTo;
     if (query.status !== undefined) options.status = query.status;
 
     console.log('Fetching participants with options:', options);
+    console.log(`Date range filter: ${query.dateFrom || 'none'} to ${query.dateTo || 'none'}`);
 
     const result = await participantsService.getParticipants(options, promo_id);
 
@@ -67,11 +68,11 @@ export class ParticipantsController {
       message: 'Participants retrieved successfully',
       pagination: {
         hasNext: result.hasNext,
-        page: result.page,
+        page: query.page,
         totalPages: result.totalPages,
         total: result.total,
         limit: query.limit,
-        offset: query.offset,
+        offset: offset,
       },
     };
 
@@ -104,15 +105,17 @@ export class ParticipantsController {
     const query = searchParticipantsQuerySchema.parse(req.query);
     const promo_id = req.params.promo_id;
 
+    // Convert page to offset for internal service
+    const offset = (query.page - 1) * query.limit;
+
     // Filter out undefined values to match strict optional types
     const options: any = {
       limit: query.limit,
-      offset: query.offset,
+      offset: offset,
       sort: query.sort,
     };
     
     if (query.country !== undefined) options.country = query.country;
-    if (query.date !== undefined) options.date = query.date;
     if (query.dateFrom !== undefined) options.dateFrom = query.dateFrom;
     if (query.dateTo !== undefined) options.dateTo = query.dateTo;
     if (query.status !== undefined) options.status = query.status;
@@ -125,11 +128,11 @@ export class ParticipantsController {
       message: `Found ${result.participants.length} participants`,
       pagination: {
         hasNext: result.hasNext,
-        page: result.page,
+        page: query.page,
         totalPages: result.totalPages,
         total: result.total,
         limit: query.limit,
-        offset: query.offset,
+        offset: offset,
       },
       query: query.q,
     };

@@ -96,7 +96,6 @@ export interface GetParticipantsOptions {
   search?: string;
   sort?: "created_asc" | "created_desc";
   country?: string;
-  date?: string; // ✅ single-date filter (YYYY-MM-DD)
   dateFrom?: string; // ✅ date range start (YYYY-MM-DD)
   dateTo?: string; // ✅ date range end (YYYY-MM-DD)
   status?: "active" | "inactive";
@@ -124,7 +123,6 @@ export class ParticipantsService {
       search,
       sort = "created_desc",
       country,
-      date,
       dateFrom,
       dateTo,
       status,
@@ -154,6 +152,10 @@ export class ParticipantsService {
       );
 
       console.log(`Fetched ${allItems.length} participants from EasyPromos API`);
+      
+      if (dateFrom || dateTo) {
+        console.log(`Applying date range filter: ${dateFrom || 'no start'} to ${dateTo || 'no end'}`);
+      }
 
       // ✅ Step 1: Filter by country, date, and status
       let filteredItems = allItems.filter((item: any) => {
@@ -168,19 +170,6 @@ export class ParticipantsService {
           }
         }
 
-        // 🔹 Filter by specific date (YYYY-MM-DD format)
-        if (date && date.trim()) {
-          try {
-            const itemDate = new Date(item.created).toISOString().split("T")[0];
-            if (itemDate !== date.trim()) {
-              keep = false;
-            }
-          } catch (error) {
-            console.warn("Invalid date in participant:", item.created);
-            keep = false;
-          }
-        }
-
         // 🔹 Filter by date range (dateFrom to dateTo)
         if (dateFrom || dateTo) {
           try {
@@ -188,6 +177,7 @@ export class ParticipantsService {
             
             if (dateFrom) {
               const fromDate = new Date(dateFrom);
+              fromDate.setHours(0, 0, 0, 0); // Start of the day
               if (itemDate < fromDate) {
                 keep = false;
               }
@@ -195,7 +185,7 @@ export class ParticipantsService {
             
             if (dateTo) {
               const toDate = new Date(dateTo);
-              toDate.setHours(23, 59, 59, 999); // Include the entire end date
+              toDate.setHours(23, 59, 59, 999); // End of the day
               if (itemDate > toDate) {
                 keep = false;
               }

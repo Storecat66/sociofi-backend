@@ -33,4 +33,11 @@ router.post('/logout', authController.logout);
  */
 router.post('/invalidate-sessions', requireAuth, authController.invalidateSessions);
 
+/**
+ * @route   POST /api/auth/request-password-reset
+ * @desc    Request password reset email
+ * @access  Public
+ */
+router.post('/request-password-reset', authLimiter, authController.requestPasswordReset);
+
 export default router;

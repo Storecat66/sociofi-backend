@@ -97,6 +97,27 @@ export class AuthController {
       );
     }
   );
+
+  /**
+   * POST /api/auth/request-password-reset
+   */
+  requestPasswordReset = asyncHandler(
+    async (req: Request, res: Response): Promise<void> => {
+      const { email } = z
+        .object({
+          email: z.string().email("Invalid email format"),
+        })
+        .parse(req.body);
+
+      await authService.requestPasswordReset(email);
+
+      ResponseBuilder.success(
+        res,
+        null,
+        "If the email is registered, a password reset link has been sent"
+      );
+    }
+  );
 }
 
 export const authController = new AuthController();
