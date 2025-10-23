@@ -57,6 +57,7 @@ app.get("/", (_req, res) => {
 
 // Health check endpoint
 app.get("/health", (_req, res) => {
+  console.log("Health check requested");
   res.status(200).json({
     success: true,
     message: "Server is healthy",
