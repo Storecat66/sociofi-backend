@@ -3,7 +3,6 @@ import app from "./app";
 import { connectDB, closeDB } from "./db/client"; // ✅ MongoDB versions
 import { authService } from "./modules/auth/auth.service";
 import env from "./config/env";
-import seed from "./db/seed";
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (error: Error) => {

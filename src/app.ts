@@ -51,7 +51,7 @@ app.use(generalLimiter);
 app.get("/", (_req, res) => {
   res.status(200).json({
     success: true,
-    message: "Server is up and running updated_2",
+    message: "webhook is ready to test",
   });
 });
 
@@ -63,6 +63,18 @@ app.get("/health", (_req, res) => {
     timestamp: new Date().toISOString(),
     environment: env.NODE_ENV,
   });
+});
+
+app.post('/webhook/participations', (req, res) => {
+  const event = req.body;
+  console.log('Received Easypromos webhook:', event);
+
+  // The event might contain e.g. promotionId, user details, participation timestamp
+  // You’ll inspect the payload and handle it
+  // e.g., store in your DB, trigger some action, notify UI, etc.
+
+  // Respond 200 OK quickly
+  res.status(200).json({ received: true , message: 'Easypromos webhook received successfully' , event });
 });
 
 // API routes
