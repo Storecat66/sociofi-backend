@@ -8,7 +8,7 @@ export const promotionsController = {
    * GET /api/promotions/active
    * Get list of active promotions
    */
-  getActivePromotions: async (req: Request, res: Response): Promise<void> => {
+  getActivePromotions: async (_req: Request, res: Response): Promise<void> => {
     // Placeholder logic for fetching active promotions
     const easy_promo_promotion_fetching_url = env.EASY_PROMO_PROMOTION_FETCH_URL;
     const easy_promo_api_key = env.EASY_PROMO_API_KEY;

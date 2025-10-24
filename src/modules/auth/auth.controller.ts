@@ -118,6 +118,22 @@ export class AuthController {
       );
     }
   );
+
+  /**
+   * POST /api/auth/reset-password
+   */
+  resetPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { token, newPassword } = z
+      .object({
+        token: z.string().min(1, "Token is required"),
+        newPassword: z.string().min(8, "Password must be at least 8 characters"),
+      })
+      .parse(req.body);
+
+    await authService.resetPassword(token, newPassword);
+
+    ResponseBuilder.success(res, null, "Password has been reset successfully");
+  });
 }
 
 export const authController = new AuthController();

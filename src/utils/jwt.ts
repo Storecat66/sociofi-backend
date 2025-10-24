@@ -102,11 +102,51 @@ class JWTService {
   }
 
   /**
+   * Generate a short-lived password reset token and return token + jti
+   */
+  generatePasswordResetToken(userId: string, tokenVersion: number): { token: string; jti: string } {
+    const jti = uuidv4();
+    const payload = { userId, tokenVersion };
+    const token = jwt.sign(payload, this.accessTokenSecret, {
+      expiresIn: '1h',
+      issuer: 'store-cataloguer-api',
+      audience: 'store-cataloguer-client',
+      jwtid: jti,
+    } as jwt.SignOptions);
+    return { token, jti };
+  }
+
+  /**
+   * Verify password reset token and return payload with jti
+   */
+  verifyPasswordResetToken(token: string): { userId: string; tokenVersion: number; jti?: string } {
+    try {
+      const decoded = jwt.verify(token, this.accessTokenSecret, {
+        issuer: 'store-cataloguer-api',
+        audience: 'store-cataloguer-client',
+      }) as any;
+      // jwt.verify returns the payload; jwtid (jti) is available under 'jti' property on the returned value in many implementations
+      return { userId: decoded.userId, tokenVersion: decoded.tokenVersion, jti: (decoded as any).jti };
+    } catch (error) {
+      throw new Error('Invalid password reset token');
+    }
+  }
+
+  /**
    * Get token expiry date for refresh token
    */
   getRefreshTokenExpiry(): Date {
     const now = new Date();
     now.setDate(now.getDate() + 7); // 7 days from now
+    return now;
+  }
+
+  /**
+   * Get password reset token expiry (1 hour)
+   */
+  getPasswordResetExpiry(): Date {
+    const now = new Date();
+    now.setHours(now.getHours() + 1);
     return now;
   }
 

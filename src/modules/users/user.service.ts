@@ -5,6 +5,7 @@ import { sanitizeUser, sanitizeUsers, canManageUser, isValidRole } from "./user.
 import { NotFoundError, ForbiddenError, BadRequestError } from "../../utils/http";
 import * as argon2 from "argon2";
 import { Types } from "mongoose";
+import { sendMail } from "../../utils/mail";
 
 export class UserService {
   async getUsers({ limit = 30, cursor }: { limit?: number; cursor?: string } = {}) {
@@ -129,6 +130,15 @@ export class UserService {
       ...userData,
       password_hash,
     });
+
+    // sending the mail to the user with credentials
+    
+    await sendMail({
+      to: newUser.email,
+      subject: 'Your New Account Created',
+      text: `Hello ${newUser.name},\n\nYour account has been created successfully.\n\nEmail: ${newUser.email}\nPassword: ${userData.password}\n\nPlease log in and change your password immediately.\n\nBest regards,\nSocio-Fi Team`,
+    });
+   
 
     return sanitizeUser(newUser.toObject() as User);
   }

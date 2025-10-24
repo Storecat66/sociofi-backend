@@ -5,6 +5,9 @@ import { UserModel } from "../../models/user.model";
 import { RefreshTokenModel } from "../../models/refreshToken.model";
 import { AuditLogModel } from "../../models/auditLog.model";
 import { IUser } from "../../models/user.model";
+import { sendMail } from "../../utils/mail";
+import env from "../../config/env";
+import { PasswordResetModel } from "../../models/passwordReset.model";
 
 export class AuthService {
   /**
@@ -189,8 +192,84 @@ export class AuthService {
    * Request password reset (stub implementation)
    */
   async requestPasswordReset(email: string): Promise<void> {
-    // In a real implementation, generate a reset token, save it, and send email
-    console.log(`Password reset requested for email: ${email}`);
+    // Find active user; do not reveal existence to caller
+    const user = await UserModel.findOne({ email, is_active: true });
+
+    if (!user) {
+      // Still log for internal debugging, but don't reveal to client
+      console.log(`Password reset requested for email: ${email} (no active user)`);
+      return;
+    }
+
+    const userId = (user._id as any).toString();
+
+    // Generate a short-lived password reset token (contains tokenVersion to invalidate on password change)
+    const { token: resetToken, jti } = jwtService.generatePasswordResetToken(userId, user.token_version);
+
+    // Persist token as single-use record
+    await PasswordResetModel.create({
+      user_id: user._id,
+      token: jti,
+      expires_at: jwtService.getPasswordResetExpiry(),
+    });
+
+    // Build reset URL using CORS_ORIGIN as frontend base
+    const resetUrl = `${env.CORS_ORIGIN.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(
+      resetToken
+    )}`;
+
+    const html = `<p>Hi ${user.name || ''},</p>
+<p>We received a request to reset your Socio‑Fi password. Click the link below to set a new password. This link will expire in about an hour.</p>
+<p><a href="${resetUrl}">Reset your password</a></p>
+<p>If you didn't request this, you can safely ignore this email.</p>`;
+
+    await sendMail({
+      to: user.email,
+      subject: 'Socio‑Fi — Password reset',
+      html,
+      text: `Reset your password: ${resetUrl}`,
+    });
+
+    await this.logActivity(userId, 'request_password_reset', 'users', userId, { email });
+  }
+
+  /**
+   * Consume a password reset token and set a new password
+   */
+  async resetPassword(tokenString: string, newPassword: string): Promise<void> {
+    try {
+      const payload = jwtService.verifyPasswordResetToken(tokenString);
+
+      // jti must be present to look up the DB record
+      const jti = payload.jti;
+      if (!jti) throw new Error('Invalid token');
+
+      const record = await PasswordResetModel.findOne({
+        token: jti,
+        used: false,
+        expires_at: { $gt: new Date() },
+      });
+
+      if (!record) throw new Error('Invalid or expired token');
+
+      // Mark token as used (single use)
+      await PasswordResetModel.updateOne({ _id: record._id }, { $set: { used: true, used_at: new Date() } });
+
+      // Find user and update password
+      const user = await UserModel.findOne({ _id: payload.userId, is_active: true });
+      if (!user) throw new Error('Invalid token');
+
+      const hashed = await argon2.hash(newPassword);
+
+      await UserModel.updateOne({ _id: user._id }, { $set: { password_hash: hashed }, $inc: { token_version: 1 } });
+
+      // Remove all refresh tokens to force re-login
+      await RefreshTokenModel.deleteMany({ user_id: user._id });
+
+      await this.logActivity((user._id as any).toString(), 'reset_password', 'users', (user._id as any).toString(), {});
+    } catch (err) {
+      throw new UnauthorizedError('Invalid or expired password reset token');
+    }
   }
 }
 
