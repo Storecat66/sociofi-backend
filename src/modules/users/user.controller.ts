@@ -96,6 +96,30 @@ export class UserController {
   });
 
   /**
+   * PUT /api/users/:id/status
+   * Update only the user's active status
+   */
+  changeStatus = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+      ResponseBuilder.error(res, 'Authentication required', 401);
+      return;
+    }
+
+    const { id } = userIdParamsSchema.parse(req.params);
+
+    const payload = z.object({ is_active: z.boolean() }).parse(req.body);
+
+    const updatedUser = await userService.updateUser(
+      id.toString(),
+      { is_active: payload.is_active },
+      req.user.id,
+      req.user.role
+    );
+
+    ResponseBuilder.success(res, updatedUser, 'User status updated successfully');
+  });
+
+  /**
    * PATCH /api/users/:id/campaigns
    * Assign promotions/campaigns to a user
    */

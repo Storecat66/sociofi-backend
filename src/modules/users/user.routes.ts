@@ -88,6 +88,19 @@ router.get(
 router.patch("/:id", requireAuth, userLimiter, userController.updateUser);
 
 /**
+ * @route   PUT /api/users/:id/status
+ * @desc    Toggle or set user active status
+ * @access  Private (Manager/Admin only)
+ */
+router.put(
+  "/:id/status",
+  requireAuth,
+  requireAdmin,
+  userLimiter,
+  userController.changeStatus
+);
+
+/**
  * @route   PATCH /api/users/:id/campaigns
  * @desc    Assign promotions/campaigns to a user
  * @access  Private (Admin only)

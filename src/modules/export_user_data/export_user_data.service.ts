@@ -17,292 +17,110 @@ export interface PDFExportResult {
   contentType: string;
 }
 
+// Define the exact columns to export with their mappings
+interface ColumnMapping {
+  displayName: string;
+  path: string[];
+  customExtractor?: (item: any) => any;
+}
+
+const EXPORT_COLUMNS: ColumnMapping[] = [
+  { displayName: "Id", path: ["id"] },
+  { displayName: "Name", path: ["name"] },
+  { displayName: "Email", path: ["email"] },
+  { displayName: "Phone No", path: ["phone_no"] },
+  { displayName: "Access Code", path: ["access_code"] },
+  { displayName: "Country", path: ["country"] },
+  { displayName: "Created", path: ["created"] },
+  { displayName: "Device", path: ["device"] },
+  { displayName: "IP Address", path: ["full", "ip"] },
+  { displayName: "Points", path: ["points"] },
+  { displayName: "Prize", path: ["prize"] },
+  { displayName: "Prize Code", path: ["reward_code"] },
+  { displayName: "Promotion Id", path: ["promotion"] },
+  { displayName: "Device Details", path: ["full", "user_agent"] },
+  {
+    displayName: "Participant Status",
+    path: ["full", "user", "custom_properties"],
+    customExtractor: (item: any) => {
+      const customProps = item?.full?.user?.custom_properties;
+      if (Array.isArray(customProps)) {
+        const statusProp = customProps.find((prop: any) => prop.title === "Status");
+        return statusProp?.value || "-";
+      }
+      return "-";
+    },
+  },
+  { displayName: "First Name", path: ["full", "user", "first_name"] },
+  { displayName: "Language", path: ["full", "user", "language"] },
+  { displayName: "Last Name", path: ["full", "user", "last_name"] },
+  { displayName: "Login Type", path: ["full", "user", "login_type"] },
+  { displayName: "Nickname", path: ["full", "user", "nickname"] },
+];
+
 export class ExportService {
   /**
-   * Extract all unique column keys from data including nested fields from 'full' object
+   * Extract value from nested path
    */
-  private extractColumns(data: ExportData[]): string[] {
-    if (!data || data.length === 0) return [];
-
-    const columnSet = new Set<string>();
-
-    const addNestedKeys = (obj: any, prefix: string = "") => {
-      if (!obj || typeof obj !== "object") return;
-
-      Object.keys(obj).forEach((key) => {
-        const value = obj[key];
-        const fullKey = prefix ? `${prefix}.${key}` : key;
-
-        // Handle arrays of objects specially (like custom_properties)
-        if (
-          Array.isArray(value) &&
-          value.length > 0 &&
-          typeof value[0] === "object"
-        ) {
-          // For arrays of objects, create columns for each field
-          Object.keys(value[0]).forEach((arrayKey) => {
-            if (arrayKey !== "id" && arrayKey !== "ref") {
-              // Skip technical fields
-              columnSet.add(`${fullKey}.${arrayKey}`);
-            }
-          });
-        }
-        // Handle nested objects
-        else if (value && typeof value === "object" && !Array.isArray(value)) {
-          addNestedKeys(value, fullKey);
-        }
-        // Add the key itself for primitive values
-        else if (!prefix.includes("meta_data")) {
-          // Skip meta_data details
-          columnSet.add(fullKey);
-        }
-      });
-    };
-
-    // First add top-level keys
-    data.forEach((item) => {
-      Object.keys(item).forEach((key) => {
-        if (key !== "full") {
-          columnSet.add(key);
-        }
-      });
-
-      // Then process the full object if present
-      if (item.full) {
-        // Add important nested paths explicitly
-        const nestedPaths = [
-          "user.custom_properties",
-          "prize.prize_type",
-          "requirement",
-        ];
-        nestedPaths.forEach((path) => {
-          let obj = item.full;
-          const parts = path.split(".");
-          for (const part of parts) {
-            obj = obj?.[part];
-            if (!obj) break;
-          }
-          if (obj) {
-            addNestedKeys(obj, path);
-          }
-        });
-
-        // Add other important fields from full
-        addNestedKeys(item.full);
-      }
-    });
-
-    // Sort columns logically
-    const sortedColumns = Array.from(columnSet).sort((a, b) => {
-      // Keep primary fields first
-      const primaryFields = ["id", "name", "email", "phone_no", "status"];
-      const aPrimary = primaryFields.indexOf(a);
-      const bPrimary = primaryFields.indexOf(b);
-
-      if (aPrimary !== -1 || bPrimary !== -1) {
-        return (
-          (aPrimary === -1 ? 999 : aPrimary) -
-          (bPrimary === -1 ? 999 : bPrimary)
-        );
-      }
-
-      // Then sort alphabetically
-      return a.localeCompare(b);
-    });
-
-    return sortedColumns;
-  }
-
-  /**
-   * Flatten nested objects and format values with improved nested object handling
-   */
-  private flattenData(data: ExportData[]): ExportData[] {
-    return data.map((item) => {
-      const flattened: ExportData = {};
-
-      const flattenObject = (obj: any, prefix: string = "") => {
-        if (!obj || typeof obj !== "object") return;
-
-        Object.keys(obj).forEach((key) => {
-          const value = obj[key];
-          const fullKey = prefix ? `${prefix}.${key}` : key;
-
-          // Handle null/undefined
-          if (value === null || value === undefined) {
-            if (!prefix.includes("meta_data")) {
-              // Skip meta_data details
-              flattened[fullKey] = "-";
-            }
-          }
-          // Handle arrays
-          else if (Array.isArray(value)) {
-            if (value.length > 0 && typeof value[0] === "object") {
-              // For arrays of objects (like custom_properties)
-              value.forEach((item) => {
-                if (item.title && item.value) {
-                  flattened[`${fullKey}.${item.title}`] = item.value;
-                }
-              });
-            } else {
-              flattened[fullKey] = value.join(", ");
-            }
-          }
-          // Handle nested objects
-          else if (typeof value === "object") {
-            flattenObject(value, fullKey);
-          }
-          // Handle primitive values
-          else if (!prefix.includes("meta_data")) {
-            // Skip meta_data details
-            flattened[fullKey] = value;
-          }
-        });
-      };
-
-      // First flatten top-level keys
-      Object.keys(item).forEach((key) => {
-        if (key !== "full") {
-          flattened[key] = item[key];
-        }
-      });
-
-      // Then process the full object if present
-      if (item.full) {
-        flattenObject(item.full);
-      }
-
-      return flattened;
-    });
-  }
-
-  /**
-   * Format column name for display (handle nested paths and convert to Title Case)
-   */
-  private formatColumnName(columnName: string): string {
-    // Special cases for specific columns
-    const specialCases: Record<string, string> = {
-      "prize.prize_type.name": "Prize Name",
-      "prize.code": "Prize Code",
-      "user.custom_properties.Status": "Participant Status",
-      "requirement.code": "Access Code",
-      ip: "IP Address",
-      user_agent: "Device Details",
-    };
-
-    if (specialCases[columnName]) {
-      return specialCases[columnName];
+  private getNestedValue(obj: any, path: string[]): any {
+    let value = obj;
+    for (const key of path) {
+      if (value == null) return "-";
+      value = value[key];
     }
+    return value != null && value !== "" ? value : "-";
+  }
 
-    // Handle nested paths
-    const parts = columnName.split(".");
-    const lastPart = parts[parts.length - 1];
+  /**
+   * Extract data according to specified columns only
+   */
+  private extractColumnData(data: ExportData[]): ExportData[] {
+    return data.map((item) => {
+      const extracted: ExportData = {};
 
-    // Convert snake_case to Title Case
-    return lastPart
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
+      EXPORT_COLUMNS.forEach((column) => {
+        if (column.customExtractor) {
+          extracted[column.displayName] = column.customExtractor(item);
+        } else {
+          extracted[column.displayName] = this.getNestedValue(item, column.path);
+        }
+      });
+
+      return extracted;
+    });
   }
 
   /**
    * Generate Excel file from user data
    */
-  /**
-   * Generate Excel file from user data
-   * @param data - array of export objects
-   * @param includeColumns - optional array of friendly column names to include (in order)
-   */
-  async generateExcelExport(
-    data: ExportData[],
-    includeColumns?: string[]
-  ): Promise<ExcelExportResult> {
+  async generateExcelExport(data: ExportData[]): Promise<ExcelExportResult> {
     if (!data || data.length === 0) {
       throw new Error("No data provided for export");
     }
 
-    // Flatten the data
-    const flattenedData = this.flattenData(data);
+    // Extract only specified columns
+    const extractedData = this.extractColumnData(data);
 
-    // Extract columns (all detected)
-    const allColumns = this.extractColumns(flattenedData);
+    // Get column headers
+    const headers = EXPORT_COLUMNS.map((col) => col.displayName);
 
-    // If caller provided friendly column names, map them to flattened keys
-    const labelToKeyMap: Record<string, string> = {
-      id: "id",
-      "Id": "id",
-      name: "name",
-      "Name": "name",
-      email: "email",
-      "Email": "email",
-      "phone no": "phone_no",
-      "Phone No": "phone_no",
-      "access code": "access_code",
-      "Access Code": "access_code",
-      country: "country",
-      "Country": "country",
-      created: "created",
-      "Created": "created",
-      device: "device",
-      "Device": "device",
-      "ip address": "ip",
-      "IP Address": "ip",
-      points: "points",
-      "Points": "points",
-      prize: "prize",
-      "Prize": "prize",
-      "prize code": "reward_code",
-      "Prize Code": "reward_code",
-      "promotion id": "promotion",
-      "Promotion Id": "promotion",
-      "device details": "user_agent",
-      "Device Details": "user_agent",
-      "participant status": "status",
-      "Participant Status": "status",
-      "external id": "user.external_id",
-      "External Id": "user.external_id",
-      "first name": "user.first_name",
-      "First Name": "user.first_name",
-      language: "user.language",
-      "Language": "user.language",
-      "last name": "user.last_name",
-      "Last Name": "user.last_name",
-      "login type": "user.login_type",
-      "Login Type": "user.login_type",
-      nickname: "user.nickname",
-      "Nickname": "user.nickname",
-    };
-
-    let columns: string[] = allColumns;
-    let displayHeaders: string[] = allColumns.map((c) => this.formatColumnName(c));
-
-    if (includeColumns && includeColumns.length > 0) {
-      // Map friendly labels (case-insensitive) to flattened keys
-      const mappedKeys: string[] = includeColumns.map((label) => {
-        const key = labelToKeyMap[label] ?? labelToKeyMap[label.toLowerCase()];
-        return key ?? label; // fallback to label if no mapping
-      });
-
-      // Keep only keys that exist in detected columns OR allow keys that may come from flattened data
-      columns = mappedKeys;
-      displayHeaders = includeColumns;
-    }
-
-    // Create worksheet with formatted headers
-    const formattedHeaders = displayHeaders;
+    // Create worksheet
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet([
-      formattedHeaders,
-      ...flattenedData.map((row) => columns.map((col) => row[col] ?? "-")),
+      headers,
+      ...extractedData.map((row) =>
+        headers.map((header) => row[header] ?? "-")
+      ),
     ]);
 
-    // Set dynamic column widths based on content and headers
-    worksheet["!cols"] = columns.map((col) => {
-      const headerLength = this.formatColumnName(col).length;
-      let maxContentLength = 20; // default minimum
+    // Set dynamic column widths
+    worksheet["!cols"] = headers.map((header) => {
+      const headerLength = header.length;
+      let maxContentLength = 15; // default minimum
 
       // Check content length in this column
-      flattenedData.forEach((row) => {
-        const content = String(row[col] ?? "");
+      extractedData.forEach((row) => {
+        const content = String(row[header] ?? "");
         if (content.length > maxContentLength) {
           maxContentLength = Math.min(content.length, 50); // cap at 50 chars
         }
@@ -338,82 +156,16 @@ export class ExportService {
   /**
    * Generate PDF file from user data using pdfmake
    */
-  /**
-   * Generate PDF file from user data using pdfmake
-   * @param data - array of export objects
-   * @param includeColumns - optional array of friendly column names to include (in order)
-   */
-  async generatePDFExport(
-    data: ExportData[],
-    includeColumns?: string[]
-  ): Promise<PDFExportResult> {
+  async generatePDFExport(data: ExportData[]): Promise<PDFExportResult> {
     if (!data || data.length === 0) {
       throw new Error("No data provided for export");
     }
 
-    // Flatten the data
-    const flattenedData = this.flattenData(data);
+    // Extract only specified columns
+    const extractedData = this.extractColumnData(data);
 
-    const allColumns = this.extractColumns(flattenedData);
-
-    // Reuse same mapping as Excel
-    const labelToKeyMap: Record<string, string> = {
-      id: "id",
-      "Id": "id",
-      name: "name",
-      "Name": "name",
-      email: "email",
-      "Email": "email",
-      "phone no": "phone_no",
-      "Phone No": "phone_no",
-      "access code": "access_code",
-      "Access Code": "access_code",
-      country: "country",
-      "Country": "country",
-      created: "created",
-      "Created": "created",
-      device: "device",
-      "Device": "device",
-      "ip address": "ip",
-      "IP Address": "ip",
-      points: "points",
-      "Points": "points",
-      prize: "prize",
-      "Prize": "prize",
-      "prize code": "reward_code",
-      "Prize Code": "reward_code",
-      "promotion id": "promotion",
-      "Promotion Id": "promotion",
-      "device details": "user_agent",
-      "Device Details": "user_agent",
-      "participant status": "status",
-      "Participant Status": "status",
-      "external id": "user.external_id",
-      "External Id": "user.external_id",
-      "first name": "user.first_name",
-      "First Name": "user.first_name",
-      language: "user.language",
-      "Language": "user.language",
-      "last name": "user.last_name",
-      "Last Name": "user.last_name",
-      "login type": "user.login_type",
-      "Login Type": "user.login_type",
-      nickname: "user.nickname",
-      "Nickname": "user.nickname",
-    };
-
-    let columns: string[] = allColumns;
-    let displayHeaders: string[] = allColumns.map((c) => this.formatColumnName(c));
-
-    if (includeColumns && includeColumns.length > 0) {
-      const mappedKeys: string[] = includeColumns.map((label) => {
-        const key = labelToKeyMap[label] ?? labelToKeyMap[label.toLowerCase()];
-        return key ?? label;
-      });
-
-      columns = mappedKeys;
-      displayHeaders = includeColumns;
-    }
+    // Get column headers
+    const headers = EXPORT_COLUMNS.map((col) => col.displayName);
 
     // Define fonts for pdfmake
     const fonts = {
@@ -433,69 +185,70 @@ export class ExportService {
 
     const printer = new PdfPrinter(fonts);
 
-    // Create table header with formatted column names
-    const tableHeader = displayHeaders.map((h) => ({
-      text: h,
+    // Create table header
+    const tableHeader = headers.map((header) => ({
+      text: header,
       style: "tableHeader",
       bold: true,
     }));
 
-    // Create table body with improved formatting
+    // Create table body
     const tableBody: any[][] = [tableHeader];
 
-    flattenedData.forEach((row) => {
-      const rowData = columns.map((col) => {
-        const value = row[col];
+    extractedData.forEach((row) => {
+      const rowData = headers.map((header) => {
+        const value = row[header];
         const displayValue =
           value !== null && value !== undefined ? String(value) : "-";
 
-        // Special styling cases
+        // Cell styling configuration
         const styleConfig: any = {
-          fontSize: 8,
-          lineHeight: 1.2,
+          fontSize: 7, // Reduced from 8 to 7
+          lineHeight: 1.1, // Reduced from 1.2
+          alignment: "left",
+          noWrap: false,
         };
 
-        // Cell alignment based on content type
-        styleConfig.alignment = "left";
+        // Number alignment
         if (
           typeof value === "number" ||
-          col.includes("points") ||
-          col.includes("qty")
+          header === "Points" ||
+          header === "Id"
         ) {
           styleConfig.alignment = "right";
         }
 
-        // Word wrapping for all cells
-        styleConfig.noWrap = false;
+        // Center alignment for specific columns
+        if (
+          ["Access Code", "Prize Code", "Created", "Device", "Country"].includes(
+            header
+          )
+        ) {
+          styleConfig.alignment = "center";
+        }
 
-        // Special styling for status columns
-        if (col.toLowerCase().includes("status")) {
-          const isActive = displayValue.toLowerCase() === "active";
-          styleConfig.fillColor = isActive ? "#dcfce7" : "#fef3c7";
-          styleConfig.color = isActive ? "#15803d" : "#d97706";
+        // Status styling
+        if (header === "Participant Status") {
+          const isResident = displayValue.toLowerCase() === "resident";
+          styleConfig.fillColor = isResident ? "#dcfce7" : "#fef3c7";
+          styleConfig.color = isResident ? "#15803d" : "#d97706";
           styleConfig.alignment = "center";
         }
 
         // Prize styling
-        if (col === "prize.prize_type.name") {
+        if (header === "Prize") {
           styleConfig.bold = true;
           styleConfig.color = "#4338ca";
         }
 
-        // Access code styling
-        if (col === "requirement.code" || col === "prize.code") {
+        // Code styling
+        if (header === "Access Code" || header === "Prize Code") {
           styleConfig.font = "Courier";
           styleConfig.color = "#1e40af";
-          styleConfig.alignment = "center";
-        }
-
-        // Date formatting and alignment
-        if (col.includes("created") || col.includes("date")) {
-          styleConfig.alignment = "center";
         }
 
         // Date formatting
-        if (col.includes("created")) {
+        if (header === "Created") {
           try {
             const date = new Date(value);
             if (!isNaN(date.getTime())) {
@@ -514,93 +267,56 @@ export class ExportService {
       tableBody.push(rowData);
     });
 
-    // Group columns by importance/category for better layout
-    const columnGroups = {
-      primary: ["id", "name", "email", "phone_no", "status"],
-      prize: columns.filter((col) => col.includes("prize")),
-      user: columns.filter(
-        (col) => col.includes("user") || col.includes("custom_properties")
-      ),
-      other: columns.filter((col) => {
-        const isOther =
-          !["id", "name", "email", "phone_no", "status"].includes(col) &&
-          !col.includes("prize") &&
-          !col.includes("user") &&
-          !col.includes("custom_properties");
-        return isOther;
-      }),
-    };
-
-    // Reorder columns to ensure most important data is visible first
-    const orderedColumns = [
-      ...columnGroups.primary,
-      ...columnGroups.prize,
-      ...columnGroups.user,
-      ...columnGroups.other,
-    ];
-
-    // Calculate optimal widths based on content and importance
-    const columnWidths = orderedColumns.map((col) => {
-      const headerLength = this.formatColumnName(col).length;
-      let maxContentLength = 8; // minimum width
-
-      // Check content length
-      flattenedData.forEach((row) => {
-        const content = String(row[col] ?? "");
-        if (content.length > maxContentLength) {
-          maxContentLength = Math.min(content.length, 30); // cap at 30 chars
-        }
-      });
-
-      // Assign widths based on column type and content
-      if (columnGroups.primary.includes(col)) {
-        // Primary columns get more space
-        return Math.min(Math.max(headerLength, maxContentLength) * 4, 80);
-      } else if (col.includes("prize") || col === "status") {
-        // Prize info and status get medium space
-        return Math.min(Math.max(headerLength, maxContentLength) * 3, 60);
-      } else {
-        // Other columns get compressed
-        return Math.min(Math.max(headerLength, maxContentLength) * 2.5, 50);
-      }
+    // Calculate column widths - optimized for A3 landscape to fit all columns
+    const columnWidths = headers.map((header) => {
+      // Assign compact widths to fit all columns on A3 landscape
+      const widthMap: Record<string, number> = {
+        "Id": 35,
+        "Name": 55,
+        "Email": 70,
+        "Phone No": 55,
+        "Access Code": 35,
+        "Country": 30,
+        "Created": 50,
+        "Device": 35,
+        "IP Address": 50,
+        "Points": 25,
+        "Prize": 60,
+        "Prize Code": 45,
+        "Promotion Id": 40,
+        "Device Details": 65,
+        "Participant Status": 45,
+        "First Name": 45,
+        "Language": 32,
+        "Last Name": 45,
+        "Login Type": 35,
+        "Nickname": 55,
+      };
+      
+      return widthMap[header] || 40;
     });
 
-    // Calculate some statistics
+    // Calculate statistics
     const stats = {
       totalRecords: data.length,
-      totalColumns: columns.length,
-      uniquePrizes: new Set(
-        flattenedData.map((row) => row["prize.prize_type.name"])
-      ).size,
-      activeParticipants: flattenedData.filter(
-        (row) => String(row["status"]).toLowerCase() === "active"
+      activeParticipants: extractedData.filter(
+        (row) => String(row["Participant Status"]).toLowerCase() === "resident"
       ).length,
-      dateRange: {
-        start: new Date(
-          Math.min(
-            ...flattenedData.map((row) => new Date(row["created"]).getTime())
-          )
-        ).toLocaleDateString(),
-        end: new Date(
-          Math.max(
-            ...flattenedData.map((row) => new Date(row["created"]).getTime())
-          )
-        ).toLocaleDateString(),
-      },
+      uniquePrizes: new Set(extractedData.map((row) => row["Prize"])).size,
     };
 
     // Document definition
     const docDefinition: TDocumentDefinitions = {
-      pageSize: "A3", // Larger page size
+      pageSize: "A2", // Increased from A3 to A2 for more width
       pageOrientation: "landscape",
-      pageMargins: [10, 60, 10, 20], // Reduced margins
+      pageMargins: [8, 50, 8, 18], // Reduced margins further
       header: {
         columns: [
           {
             text: "Participation Export Report",
             style: "header",
             alignment: "center",
-            margin: [0, 20, 0, 0],
+            margin: [0, 15, 0, 0],
           },
         ],
       },
@@ -619,10 +335,6 @@ export class ExportService {
                   text: `Generated: ${new Date().toLocaleString()}`,
                   style: "meta",
                 },
-                {
-                  text: `Date Range: ${stats.dateRange.start} to ${stats.dateRange.end}`,
-                  style: "meta",
-                },
               ],
             },
             {
@@ -633,12 +345,18 @@ export class ExportService {
                   style: "subheader",
                   margin: [0, 0, 0, 5],
                 },
-                { text: `Total Records: ${stats.totalRecords}`, style: "meta" },
                 {
-                  text: `Active Participants: ${stats.activeParticipants}`,
+                  text: `Total Records: ${stats.totalRecords}`,
                   style: "meta",
                 },
-                { text: `Unique Prizes: ${stats.uniquePrizes}`, style: "meta" },
+                {
+                  text: `Residents: ${stats.activeParticipants}`,
+                  style: "meta",
+                },
+                {
+                  text: `Unique Prizes: ${stats.uniquePrizes}`,
+                  style: "meta",
+                },
               ],
             },
           ],
@@ -650,7 +368,6 @@ export class ExportService {
             headerRows: 1,
             widths: columnWidths,
             body: tableBody,
-            // Enable table splitting across pages
             dontBreakRows: false,
             keepWithHeaderRows: 1,
           },
@@ -662,15 +379,14 @@ export class ExportService {
                 ? "#f8fafc"
                 : null;
             },
-            hLineWidth: () => 0.5,
-            vLineWidth: () => 0.5,
+            hLineWidth: () => 0.3, // Thinner lines
+            vLineWidth: () => 0.3,
             hLineColor: () => "#e2e8f0",
             vLineColor: () => "#e2e8f0",
-            paddingLeft: () => 3,
-            paddingRight: () => 3,
-            paddingTop: () => 3,
-            paddingBottom: () => 3,
-            // Enable word wrapping for all cells
+            paddingLeft: () => 2, // Reduced padding
+            paddingRight: () => 2,
+            paddingTop: () => 2,
+            paddingBottom: () => 2,
             defaultBorder: true,
           },
         },
@@ -685,40 +401,36 @@ export class ExportService {
       },
       styles: {
         header: {
-          fontSize: 22,
+          fontSize: 18, // Reduced from 22
           bold: true,
           color: "#4f46e5",
-          marginBottom: 10,
+          marginBottom: 8,
           alignment: "center",
         },
         subheader: {
-          fontSize: 12,
+          fontSize: 10, // Reduced from 12
           bold: true,
           color: "#1f2937",
-          marginTop: 5,
+          marginTop: 3,
         },
         meta: {
-          fontSize: 9,
+          fontSize: 8, // Reduced from 9
           color: "#4b5563",
-          lineHeight: 1.4,
+          lineHeight: 1.3,
         },
         tableHeader: {
           bold: true,
-          fontSize: 9,
+          fontSize: 7, // Reduced from 9
           color: "white",
           fillColor: "#4f46e5",
-          margin: [3, 7, 3, 7],
+          margin: [2, 5, 2, 5], // Reduced padding
           alignment: "center",
-        },
-        link: {
-          color: "#2563eb",
-          decoration: "underline",
         },
       },
       defaultStyle: {
         font: "Roboto",
-        fontSize: 8,
-        lineHeight: 1.3,
+        fontSize: 7, // Reduced from 8
+        lineHeight: 1.2,
         alignment: "left",
       },
     };
