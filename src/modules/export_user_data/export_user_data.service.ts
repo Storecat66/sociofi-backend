@@ -25,49 +25,59 @@ export class ExportService {
     if (!data || data.length === 0) return [];
 
     const columnSet = new Set<string>();
-    
-    const addNestedKeys = (obj: any, prefix: string = '') => {
-      if (!obj || typeof obj !== 'object') return;
-      
-      Object.keys(obj).forEach(key => {
+
+    const addNestedKeys = (obj: any, prefix: string = "") => {
+      if (!obj || typeof obj !== "object") return;
+
+      Object.keys(obj).forEach((key) => {
         const value = obj[key];
         const fullKey = prefix ? `${prefix}.${key}` : key;
-        
+
         // Handle arrays of objects specially (like custom_properties)
-        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+        if (
+          Array.isArray(value) &&
+          value.length > 0 &&
+          typeof value[0] === "object"
+        ) {
           // For arrays of objects, create columns for each field
-          Object.keys(value[0]).forEach(arrayKey => {
-            if (arrayKey !== 'id' && arrayKey !== 'ref') { // Skip technical fields
+          Object.keys(value[0]).forEach((arrayKey) => {
+            if (arrayKey !== "id" && arrayKey !== "ref") {
+              // Skip technical fields
               columnSet.add(`${fullKey}.${arrayKey}`);
             }
           });
         }
         // Handle nested objects
-        else if (value && typeof value === 'object' && !Array.isArray(value)) {
+        else if (value && typeof value === "object" && !Array.isArray(value)) {
           addNestedKeys(value, fullKey);
         }
         // Add the key itself for primitive values
-        else if (!prefix.includes('meta_data')) { // Skip meta_data details
+        else if (!prefix.includes("meta_data")) {
+          // Skip meta_data details
           columnSet.add(fullKey);
         }
       });
     };
 
     // First add top-level keys
-    data.forEach(item => {
-      Object.keys(item).forEach(key => {
-        if (key !== 'full') {
+    data.forEach((item) => {
+      Object.keys(item).forEach((key) => {
+        if (key !== "full") {
           columnSet.add(key);
         }
       });
-      
+
       // Then process the full object if present
       if (item.full) {
         // Add important nested paths explicitly
-        const nestedPaths = ['user.custom_properties', 'prize.prize_type', 'requirement'];
-        nestedPaths.forEach(path => {
+        const nestedPaths = [
+          "user.custom_properties",
+          "prize.prize_type",
+          "requirement",
+        ];
+        nestedPaths.forEach((path) => {
           let obj = item.full;
-          const parts = path.split('.');
+          const parts = path.split(".");
           for (const part of parts) {
             obj = obj?.[part];
             if (!obj) break;
@@ -85,14 +95,17 @@ export class ExportService {
     // Sort columns logically
     const sortedColumns = Array.from(columnSet).sort((a, b) => {
       // Keep primary fields first
-      const primaryFields = ['id', 'name', 'email', 'phone_no', 'status'];
+      const primaryFields = ["id", "name", "email", "phone_no", "status"];
       const aPrimary = primaryFields.indexOf(a);
       const bPrimary = primaryFields.indexOf(b);
-      
+
       if (aPrimary !== -1 || bPrimary !== -1) {
-        return (aPrimary === -1 ? 999 : aPrimary) - (bPrimary === -1 ? 999 : bPrimary);
+        return (
+          (aPrimary === -1 ? 999 : aPrimary) -
+          (bPrimary === -1 ? 999 : bPrimary)
+        );
       }
-      
+
       // Then sort alphabetically
       return a.localeCompare(b);
     });
@@ -106,47 +119,49 @@ export class ExportService {
   private flattenData(data: ExportData[]): ExportData[] {
     return data.map((item) => {
       const flattened: ExportData = {};
-      
-      const flattenObject = (obj: any, prefix: string = '') => {
-        if (!obj || typeof obj !== 'object') return;
-        
-        Object.keys(obj).forEach(key => {
+
+      const flattenObject = (obj: any, prefix: string = "") => {
+        if (!obj || typeof obj !== "object") return;
+
+        Object.keys(obj).forEach((key) => {
           const value = obj[key];
           const fullKey = prefix ? `${prefix}.${key}` : key;
-          
+
           // Handle null/undefined
           if (value === null || value === undefined) {
-            if (!prefix.includes('meta_data')) { // Skip meta_data details
-              flattened[fullKey] = '-';
+            if (!prefix.includes("meta_data")) {
+              // Skip meta_data details
+              flattened[fullKey] = "-";
             }
           }
           // Handle arrays
           else if (Array.isArray(value)) {
-            if (value.length > 0 && typeof value[0] === 'object') {
+            if (value.length > 0 && typeof value[0] === "object") {
               // For arrays of objects (like custom_properties)
-              value.forEach(item => {
+              value.forEach((item) => {
                 if (item.title && item.value) {
                   flattened[`${fullKey}.${item.title}`] = item.value;
                 }
               });
             } else {
-              flattened[fullKey] = value.join(', ');
+              flattened[fullKey] = value.join(", ");
             }
           }
           // Handle nested objects
-          else if (typeof value === 'object') {
+          else if (typeof value === "object") {
             flattenObject(value, fullKey);
           }
           // Handle primitive values
-          else if (!prefix.includes('meta_data')) { // Skip meta_data details
+          else if (!prefix.includes("meta_data")) {
+            // Skip meta_data details
             flattened[fullKey] = value;
           }
         });
       };
 
       // First flatten top-level keys
-      Object.keys(item).forEach(key => {
-        if (key !== 'full') {
+      Object.keys(item).forEach((key) => {
+        if (key !== "full") {
           flattened[key] = item[key];
         }
       });
@@ -166,12 +181,12 @@ export class ExportService {
   private formatColumnName(columnName: string): string {
     // Special cases for specific columns
     const specialCases: Record<string, string> = {
-      'prize.prize_type.name': 'Prize Name',
-      'prize.code': 'Prize Code',
-      'user.custom_properties.Status': 'Participant Status',
-      'requirement.code': 'Access Code',
-      'ip': 'IP Address',
-      'user_agent': 'Device Details',
+      "prize.prize_type.name": "Prize Name",
+      "prize.code": "Prize Code",
+      "user.custom_properties.Status": "Participant Status",
+      "requirement.code": "Access Code",
+      ip: "IP Address",
+      user_agent: "Device Details",
     };
 
     if (specialCases[columnName]) {
@@ -179,20 +194,28 @@ export class ExportService {
     }
 
     // Handle nested paths
-    const parts = columnName.split('.');
+    const parts = columnName.split(".");
     const lastPart = parts[parts.length - 1];
-    
+
     // Convert snake_case to Title Case
     return lastPart
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
   }
 
   /**
    * Generate Excel file from user data
    */
-  async generateExcelExport(data: ExportData[]): Promise<ExcelExportResult> {
+  /**
+   * Generate Excel file from user data
+   * @param data - array of export objects
+   * @param includeColumns - optional array of friendly column names to include (in order)
+   */
+  async generateExcelExport(
+    data: ExportData[],
+    includeColumns?: string[]
+  ): Promise<ExcelExportResult> {
     if (!data || data.length === 0) {
       throw new Error("No data provided for export");
     }
@@ -200,27 +223,86 @@ export class ExportService {
     // Flatten the data
     const flattenedData = this.flattenData(data);
 
-    // Extract columns
-    const columns = this.extractColumns(flattenedData);
+    // Extract columns (all detected)
+    const allColumns = this.extractColumns(flattenedData);
+
+    // If caller provided friendly column names, map them to flattened keys
+    const labelToKeyMap: Record<string, string> = {
+      id: "id",
+      "Id": "id",
+      name: "name",
+      "Name": "name",
+      email: "email",
+      "Email": "email",
+      "phone no": "phone_no",
+      "Phone No": "phone_no",
+      "access code": "access_code",
+      "Access Code": "access_code",
+      country: "country",
+      "Country": "country",
+      created: "created",
+      "Created": "created",
+      device: "device",
+      "Device": "device",
+      "ip address": "ip",
+      "IP Address": "ip",
+      points: "points",
+      "Points": "points",
+      prize: "prize",
+      "Prize": "prize",
+      "prize code": "reward_code",
+      "Prize Code": "reward_code",
+      "promotion id": "promotion",
+      "Promotion Id": "promotion",
+      "device details": "user_agent",
+      "Device Details": "user_agent",
+      "participant status": "status",
+      "Participant Status": "status",
+      "external id": "user.external_id",
+      "External Id": "user.external_id",
+      "first name": "user.first_name",
+      "First Name": "user.first_name",
+      language: "user.language",
+      "Language": "user.language",
+      "last name": "user.last_name",
+      "Last Name": "user.last_name",
+      "login type": "user.login_type",
+      "Login Type": "user.login_type",
+      nickname: "user.nickname",
+      "Nickname": "user.nickname",
+    };
+
+    let columns: string[] = allColumns;
+    let displayHeaders: string[] = allColumns.map((c) => this.formatColumnName(c));
+
+    if (includeColumns && includeColumns.length > 0) {
+      // Map friendly labels (case-insensitive) to flattened keys
+      const mappedKeys: string[] = includeColumns.map((label) => {
+        const key = labelToKeyMap[label] ?? labelToKeyMap[label.toLowerCase()];
+        return key ?? label; // fallback to label if no mapping
+      });
+
+      // Keep only keys that exist in detected columns OR allow keys that may come from flattened data
+      columns = mappedKeys;
+      displayHeaders = includeColumns;
+    }
 
     // Create worksheet with formatted headers
-    const formattedHeaders = columns.map(col => this.formatColumnName(col));
+    const formattedHeaders = displayHeaders;
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet([
       formattedHeaders,
-      ...flattenedData.map(row => 
-        columns.map(col => row[col] ?? '-')
-      )
+      ...flattenedData.map((row) => columns.map((col) => row[col] ?? "-")),
     ]);
 
     // Set dynamic column widths based on content and headers
     worksheet["!cols"] = columns.map((col) => {
       const headerLength = this.formatColumnName(col).length;
       let maxContentLength = 20; // default minimum
-      
+
       // Check content length in this column
-      flattenedData.forEach(row => {
-        const content = String(row[col] ?? '');
+      flattenedData.forEach((row) => {
+        const content = String(row[col] ?? "");
         if (content.length > maxContentLength) {
           maxContentLength = Math.min(content.length, 50); // cap at 50 chars
         }
@@ -256,7 +338,15 @@ export class ExportService {
   /**
    * Generate PDF file from user data using pdfmake
    */
-  async generatePDFExport(data: ExportData[]): Promise<PDFExportResult> {
+  /**
+   * Generate PDF file from user data using pdfmake
+   * @param data - array of export objects
+   * @param includeColumns - optional array of friendly column names to include (in order)
+   */
+  async generatePDFExport(
+    data: ExportData[],
+    includeColumns?: string[]
+  ): Promise<PDFExportResult> {
     if (!data || data.length === 0) {
       throw new Error("No data provided for export");
     }
@@ -264,8 +354,66 @@ export class ExportService {
     // Flatten the data
     const flattenedData = this.flattenData(data);
 
-    // Extract columns
-    const columns = this.extractColumns(flattenedData);
+    const allColumns = this.extractColumns(flattenedData);
+
+    // Reuse same mapping as Excel
+    const labelToKeyMap: Record<string, string> = {
+      id: "id",
+      "Id": "id",
+      name: "name",
+      "Name": "name",
+      email: "email",
+      "Email": "email",
+      "phone no": "phone_no",
+      "Phone No": "phone_no",
+      "access code": "access_code",
+      "Access Code": "access_code",
+      country: "country",
+      "Country": "country",
+      created: "created",
+      "Created": "created",
+      device: "device",
+      "Device": "device",
+      "ip address": "ip",
+      "IP Address": "ip",
+      points: "points",
+      "Points": "points",
+      prize: "prize",
+      "Prize": "prize",
+      "prize code": "reward_code",
+      "Prize Code": "reward_code",
+      "promotion id": "promotion",
+      "Promotion Id": "promotion",
+      "device details": "user_agent",
+      "Device Details": "user_agent",
+      "participant status": "status",
+      "Participant Status": "status",
+      "external id": "user.external_id",
+      "External Id": "user.external_id",
+      "first name": "user.first_name",
+      "First Name": "user.first_name",
+      language: "user.language",
+      "Language": "user.language",
+      "last name": "user.last_name",
+      "Last Name": "user.last_name",
+      "login type": "user.login_type",
+      "Login Type": "user.login_type",
+      nickname: "user.nickname",
+      "Nickname": "user.nickname",
+    };
+
+    let columns: string[] = allColumns;
+    let displayHeaders: string[] = allColumns.map((c) => this.formatColumnName(c));
+
+    if (includeColumns && includeColumns.length > 0) {
+      const mappedKeys: string[] = includeColumns.map((label) => {
+        const key = labelToKeyMap[label] ?? labelToKeyMap[label.toLowerCase()];
+        return key ?? label;
+      });
+
+      columns = mappedKeys;
+      displayHeaders = includeColumns;
+    }
 
     // Define fonts for pdfmake
     const fonts = {
@@ -286,8 +434,8 @@ export class ExportService {
     const printer = new PdfPrinter(fonts);
 
     // Create table header with formatted column names
-    const tableHeader = columns.map((col) => ({
-      text: this.formatColumnName(col),
+    const tableHeader = displayHeaders.map((h) => ({
+      text: h,
       style: "tableHeader",
       bold: true,
     }));
@@ -298,7 +446,8 @@ export class ExportService {
     flattenedData.forEach((row) => {
       const rowData = columns.map((col) => {
         const value = row[col];
-        const displayValue = value !== null && value !== undefined ? String(value) : "-";
+        const displayValue =
+          value !== null && value !== undefined ? String(value) : "-";
 
         // Special styling cases
         const styleConfig: any = {
@@ -307,20 +456,24 @@ export class ExportService {
         };
 
         // Cell alignment based on content type
-        styleConfig.alignment = 'left';
-        if (typeof value === 'number' || col.includes('points') || col.includes('qty')) {
-          styleConfig.alignment = 'right';
+        styleConfig.alignment = "left";
+        if (
+          typeof value === "number" ||
+          col.includes("points") ||
+          col.includes("qty")
+        ) {
+          styleConfig.alignment = "right";
         }
 
         // Word wrapping for all cells
         styleConfig.noWrap = false;
-        
+
         // Special styling for status columns
         if (col.toLowerCase().includes("status")) {
           const isActive = displayValue.toLowerCase() === "active";
           styleConfig.fillColor = isActive ? "#dcfce7" : "#fef3c7";
           styleConfig.color = isActive ? "#15803d" : "#d97706";
-          styleConfig.alignment = 'center';
+          styleConfig.alignment = "center";
         }
 
         // Prize styling
@@ -333,12 +486,12 @@ export class ExportService {
         if (col === "requirement.code" || col === "prize.code") {
           styleConfig.font = "Courier";
           styleConfig.color = "#1e40af";
-          styleConfig.alignment = 'center';
+          styleConfig.alignment = "center";
         }
 
         // Date formatting and alignment
         if (col.includes("created") || col.includes("date")) {
-          styleConfig.alignment = 'center';
+          styleConfig.alignment = "center";
         }
 
         // Date formatting
@@ -363,14 +516,19 @@ export class ExportService {
 
     // Group columns by importance/category for better layout
     const columnGroups = {
-      primary: ['id', 'name', 'email', 'phone_no', 'status'],
-      prize: columns.filter(col => col.includes('prize')),
-      user: columns.filter(col => col.includes('user') || col.includes('custom_properties')),
-      other: columns.filter(col => {
-        const isOther = !['id', 'name', 'email', 'phone_no', 'status'].includes(col) &&
-          !col.includes('prize') && !col.includes('user') && !col.includes('custom_properties');
+      primary: ["id", "name", "email", "phone_no", "status"],
+      prize: columns.filter((col) => col.includes("prize")),
+      user: columns.filter(
+        (col) => col.includes("user") || col.includes("custom_properties")
+      ),
+      other: columns.filter((col) => {
+        const isOther =
+          !["id", "name", "email", "phone_no", "status"].includes(col) &&
+          !col.includes("prize") &&
+          !col.includes("user") &&
+          !col.includes("custom_properties");
         return isOther;
-      })
+      }),
     };
 
     // Reorder columns to ensure most important data is visible first
@@ -378,17 +536,17 @@ export class ExportService {
       ...columnGroups.primary,
       ...columnGroups.prize,
       ...columnGroups.user,
-      ...columnGroups.other
+      ...columnGroups.other,
     ];
 
     // Calculate optimal widths based on content and importance
     const columnWidths = orderedColumns.map((col) => {
       const headerLength = this.formatColumnName(col).length;
       let maxContentLength = 8; // minimum width
-      
+
       // Check content length
-      flattenedData.forEach(row => {
-        const content = String(row[col] ?? '');
+      flattenedData.forEach((row) => {
+        const content = String(row[col] ?? "");
         if (content.length > maxContentLength) {
           maxContentLength = Math.min(content.length, 30); // cap at 30 chars
         }
@@ -398,7 +556,7 @@ export class ExportService {
       if (columnGroups.primary.includes(col)) {
         // Primary columns get more space
         return Math.min(Math.max(headerLength, maxContentLength) * 4, 80);
-      } else if (col.includes('prize') || col === 'status') {
+      } else if (col.includes("prize") || col === "status") {
         // Prize info and status get medium space
         return Math.min(Math.max(headerLength, maxContentLength) * 3, 60);
       } else {
@@ -411,12 +569,24 @@ export class ExportService {
     const stats = {
       totalRecords: data.length,
       totalColumns: columns.length,
-      uniquePrizes: new Set(flattenedData.map(row => row['prize.prize_type.name'])).size,
-      activeParticipants: flattenedData.filter(row => String(row['status']).toLowerCase() === 'active').length,
+      uniquePrizes: new Set(
+        flattenedData.map((row) => row["prize.prize_type.name"])
+      ).size,
+      activeParticipants: flattenedData.filter(
+        (row) => String(row["status"]).toLowerCase() === "active"
+      ).length,
       dateRange: {
-        start: new Date(Math.min(...flattenedData.map(row => new Date(row['created']).getTime()))).toLocaleDateString(),
-        end: new Date(Math.max(...flattenedData.map(row => new Date(row['created']).getTime()))).toLocaleDateString(),
-      }
+        start: new Date(
+          Math.min(
+            ...flattenedData.map((row) => new Date(row["created"]).getTime())
+          )
+        ).toLocaleDateString(),
+        end: new Date(
+          Math.max(
+            ...flattenedData.map((row) => new Date(row["created"]).getTime())
+          )
+        ).toLocaleDateString(),
+      },
     };
 
     // Document definition
@@ -438,25 +608,42 @@ export class ExportService {
         {
           columns: [
             {
-              width: 'auto',
+              width: "auto",
               stack: [
-                { text: 'Report Summary', style: 'subheader', margin: [0, 0, 0, 5] },
-                { text: `Generated: ${new Date().toLocaleString()}`, style: 'meta' },
-                { text: `Date Range: ${stats.dateRange.start} to ${stats.dateRange.end}`, style: 'meta' },
-              ]
+                {
+                  text: "Report Summary",
+                  style: "subheader",
+                  margin: [0, 0, 0, 5],
+                },
+                {
+                  text: `Generated: ${new Date().toLocaleString()}`,
+                  style: "meta",
+                },
+                {
+                  text: `Date Range: ${stats.dateRange.start} to ${stats.dateRange.end}`,
+                  style: "meta",
+                },
+              ],
             },
             {
-              width: 'auto',
+              width: "auto",
               stack: [
-                { text: 'Statistics', style: 'subheader', margin: [0, 0, 0, 5] },
-                { text: `Total Records: ${stats.totalRecords}`, style: 'meta' },
-                { text: `Active Participants: ${stats.activeParticipants}`, style: 'meta' },
-                { text: `Unique Prizes: ${stats.uniquePrizes}`, style: 'meta' },
-              ]
-            }
+                {
+                  text: "Statistics",
+                  style: "subheader",
+                  margin: [0, 0, 0, 5],
+                },
+                { text: `Total Records: ${stats.totalRecords}`, style: "meta" },
+                {
+                  text: `Active Participants: ${stats.activeParticipants}`,
+                  style: "meta",
+                },
+                { text: `Unique Prizes: ${stats.uniquePrizes}`, style: "meta" },
+              ],
+            },
           ],
           columnGap: 40,
-          margin: [0, 0, 0, 20]
+          margin: [0, 0, 0, 20],
         },
         {
           table: {
@@ -502,7 +689,7 @@ export class ExportService {
           bold: true,
           color: "#4f46e5",
           marginBottom: 10,
-          alignment: 'center',
+          alignment: "center",
         },
         subheader: {
           fontSize: 12,
@@ -521,7 +708,7 @@ export class ExportService {
           color: "white",
           fillColor: "#4f46e5",
           margin: [3, 7, 3, 7],
-          alignment: 'center',
+          alignment: "center",
         },
         link: {
           color: "#2563eb",
@@ -532,7 +719,7 @@ export class ExportService {
         font: "Roboto",
         fontSize: 8,
         lineHeight: 1.3,
-        alignment: 'left',
+        alignment: "left",
       },
     };
 
