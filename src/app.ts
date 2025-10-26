@@ -32,7 +32,7 @@ app.use(
 // CORS configuration
 app.use(
   cors({
-   origin: ["https://campaignpanel.socio-fi.com", "http://localhost:5173"],
+   origin: ["https://campaignpanel.socio-fi.com", "http://localhost:5173","http://localhost:5176"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

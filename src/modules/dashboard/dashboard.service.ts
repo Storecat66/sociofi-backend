@@ -2,27 +2,25 @@ import axios from "axios";
 import env from "../../config/env";
 
 export interface DashboardStats {
-  totalParticipants: number;
+  totalParticipations: number;
+  uniqueParticipants: number;
+  prizesWon: number;
+  remainingPrizes: number;
   participantsByStatus: {
     tourist: number;
     resident: number;
   };
-  participantsByPrize: {
-    [key: string]: number;
-  };
-  participantsByCountry: {
-    [key: string]: number;
-  };
+  participantsByPrize: { [key: string]: number };
+  participantsByCountry: { [key: string]: number };
   participantsByDevice: {
     mobile: number;
     desktop: number;
     tablet: number;
     other: number;
   };
-  participationTrend: {
-    date: string;
-    count: number;
-  }[];
+  participationTrend: { date: string; count: number }[];
+  dayOfWeekTrend: { day: string; count: number }[];
+  hourOfDayTrend: { date: string; hour: number; count: number }[];
   prizes: {
     name: string;
     total: number;
@@ -38,25 +36,11 @@ export interface DashboardStats {
 }
 
 class DashboardService {
-  private detectDevice(
-    userAgent: string
-  ): "mobile" | "desktop" | "tablet" | "other" {
+  private detectDevice(userAgent: string): "mobile" | "desktop" | "tablet" | "other" {
     const ua = userAgent?.toLowerCase?.() || "";
-    if (
-      ua.includes("mobile") ||
-      ua.includes("android") ||
-      ua.includes("iphone")
-    ) {
-      return "mobile";
-    } else if (ua.includes("tablet") || ua.includes("ipad")) {
-      return "tablet";
-    } else if (
-      ua.includes("windows") ||
-      ua.includes("macintosh") ||
-      ua.includes("linux")
-    ) {
-      return "desktop";
-    }
+    if (ua.includes("mobile") || ua.includes("android") || ua.includes("iphone")) return "mobile";
+    if (ua.includes("tablet") || ua.includes("ipad")) return "tablet";
+    if (ua.includes("windows") || ua.includes("macintosh") || ua.includes("linux")) return "desktop";
     return "other";
   }
 
@@ -65,10 +49,7 @@ class DashboardService {
       const response = await axios.get(env.EASY_PROMO_PROMOTION_FETCH_URL, {
         headers: { Authorization: `Bearer ${env.EASY_PROMO_API_KEY}` },
       });
-
-      // ✅ Return only the items array
       const promotions = response.data?.items || [];
-      console.log(`Fetched ${promotions.length} promotions`);
       return promotions;
     } catch (error) {
       console.error("Error fetching promotions:", error);
@@ -76,151 +57,145 @@ class DashboardService {
     }
   }
 
-  private async fetchParticipants(
-    promo_id: string,
-    days: number = 30
-  ): Promise<any[]> {
-    const dateTo = new Date();
-    const dateFrom = new Date();
-    dateFrom.setDate(dateFrom.getDate() - days);
-
+  private async fetchParticipants(promo_id: string): Promise<any[]> {
     try {
       const response = await axios.get(
         `${env.EASY_PROMO_PARTICIPATION_FETCH_URL}/${promo_id}?format=full`,
-        {
-          headers: { Authorization: `Bearer ${env.EASY_PROMO_API_KEY}` },
-        }
+        { headers: { Authorization: `Bearer ${env.EASY_PROMO_API_KEY}` } }
       );
-
-      const items = response.data?.items || [];
-      console.log(`Fetched ${items.length} participants for promo ${promo_id}`);
-      return items;
+      return response.data?.items || [];
     } catch (error) {
-      console.error(
-        `Error fetching participants for promo ${promo_id}:`,
-        error
+      console.error(`Error fetching participants for promo ${promo_id}:`, error);
+      return [];
+    }
+  }
+
+  private async fetchUniqueParticipants(promo_id: string): Promise<any[]> {
+    try {
+      const response = await axios.get(
+        `${env.EASY_PROMO_UNIQUE_PARTICIPATION_FETCH_URL}/${promo_id}?status=all&order=created_desc`,
+        { headers: { Authorization: `Bearer ${env.EASY_PROMO_API_KEY}` } }
       );
+      return response.data?.items || [];
+    } catch (error) {
+      console.error(`Error fetching unique participants for promo ${promo_id}:`, error);
       return [];
     }
   }
 
   async getStats(promo_id?: string): Promise<DashboardStats> {
     const promotions = await this.fetchPromotions();
+    let selectedPromoId = promo_id || promotions[0]?.id?.toString();
 
-    // ✅ If no promo_id provided, use the first available promotion
-    let selectedPromoId = promo_id;
-    if (!selectedPromoId && promotions.length > 0) {
-      selectedPromoId = promotions[0].id?.toString();
-      console.log(
-        `No promo_id provided — defaulting to first promo: ${selectedPromoId}`
-      );
-    }
-
-    console.log(`Using promo_id: ${selectedPromoId} to fetch participants.`);
-
-    // 🟡 Handle no promotions gracefully
     if (!selectedPromoId) {
       throw new Error("No promotions available to fetch participants.");
     }
 
     const participants = await this.fetchParticipants(selectedPromoId);
-    const now = new Date();
+    const uniqueParticipants = await this.fetchUniqueParticipants(selectedPromoId);
 
     const stats: DashboardStats = {
-      totalParticipants: participants.length,
+      totalParticipations: participants.length,
+      uniqueParticipants: uniqueParticipants.length,
+      prizesWon: 0,
+      remainingPrizes: 0,
       participantsByStatus: { tourist: 0, resident: 0 },
       participantsByPrize: {},
       participantsByCountry: {},
       participantsByDevice: { mobile: 0, desktop: 0, tablet: 0, other: 0 },
       participationTrend: [],
+      dayOfWeekTrend: [],
+      hourOfDayTrend: [],
       prizes: [],
       conversionRate: 0,
       recentActivity: [],
     };
 
-    // Initialize daily counts for trend
-    const dailyCounts: { [key: string]: number } = {};
-    for (let i = 0; i < 30; i++) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      dailyCounts[date.toISOString().split("T")[0]] = 0;
-    }
+    const dailyCounts: { [date: string]: number } = {};
+    const dayOfWeekCounts: { [day: string]: number } = {
+      Sunday: 0, Monday: 0, Tuesday: 0, Wednesday: 0, Thursday: 0, Friday: 0, Saturday: 0,
+    };
+    // Changed: Store hour counts per date
+    const hourCountsByDate: { [dateHour: string]: { date: string; hour: number; count: number } } = {};
 
     // Process participants
-    participants.forEach((participant) => {
-      // Status
-      const status = participant.user?.custom_properties
-        ?.find((prop: any) => prop.title === "Status")
-        ?.value?.toLowerCase();
+    participants.forEach((p) => {
+      const status = p.user?.custom_properties?.find((prop: any) => prop.title === "Status")?.value?.toLowerCase();
       if (status === "tourist") stats.participantsByStatus.tourist++;
       if (status === "resident") stats.participantsByStatus.resident++;
 
-      // Prize
-      const prizeName = participant.prize?.prize_type?.name;
+      const prizeName = p.prize?.prize_type?.name;
       if (prizeName) {
-        stats.participantsByPrize[prizeName] =
-          (stats.participantsByPrize[prizeName] || 0) + 1;
+        stats.prizesWon++;
+        stats.participantsByPrize[prizeName] = (stats.participantsByPrize[prizeName] || 0) + 1;
       }
 
-      // Country
-      const country = participant.user?.country;
-      if (country) {
-        stats.participantsByCountry[country] =
-          (stats.participantsByCountry[country] || 0) + 1;
-      }
+      const country = p.user?.country;
+      if (country) stats.participantsByCountry[country] = (stats.participantsByCountry[country] || 0) + 1;
 
-      // Device
-      const device = this.detectDevice(participant.user_agent);
+      const device = this.detectDevice(p.user_agent);
       stats.participantsByDevice[device]++;
 
-      // Trend
-      const date = new Date(participant.created).toISOString().split("T")[0];
-      if (dailyCounts[date] !== undefined) dailyCounts[date]++;
+      const createdAt = new Date(p.created);
+      const dateKey = createdAt.toISOString().split("T")[0];
+      dailyCounts[dateKey] = (dailyCounts[dateKey] || 0) + 1;
 
-      // Recent Activity (limit 10)
+      const dayName = createdAt.toLocaleDateString("en-US", { weekday: "long" });
+      dayOfWeekCounts[dayName]++;
+
+      // Changed: Store hour counts with date
+      const hour = createdAt.getHours();
+      const dateHourKey = `${dateKey}_${hour}`;
+      if (!hourCountsByDate[dateHourKey]) {
+        hourCountsByDate[dateHourKey] = { date: dateKey, hour, count: 0 };
+      }
+      hourCountsByDate[dateHourKey].count++;
+
       if (stats.recentActivity.length < 10) {
         stats.recentActivity.push({
-          time: new Date(participant.created).toISOString(),
+          time: createdAt.toISOString(),
           action: "Participation",
-          details: `${participant.user?.nickname || "Anonymous"} from ${
-            participant.user?.country || "Unknown"
-          }`,
+          details: `${p.user?.nickname || "Anonymous"} from ${p.user?.country || "Unknown"}`,
         });
       }
     });
 
-    // Build trend
+    // Participation Trend
     stats.participationTrend = Object.entries(dailyCounts)
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Day of Week Trend
+    stats.dayOfWeekTrend = Object.entries(dayOfWeekCounts).map(([day, count]) => ({ day, count }));
+
+    // Hour of Day Trend (with date)
+    stats.hourOfDayTrend = Object.values(hourCountsByDate)
+      .sort((a, b) => {
+        if (a.date === b.date) return a.hour - b.hour;
+        return a.date.localeCompare(b.date);
+      });
 
     // Prizes
     const prizeTypes = new Map();
     participants.forEach((p) => {
       if (p.prize?.prize_type) {
         const { name, qty } = p.prize.prize_type;
-        const entry = prizeTypes.get(name) || {
-          total: parseInt(qty),
-          given: 0,
-        };
+        const entry = prizeTypes.get(name) || { total: parseInt(qty), given: 0 };
         entry.given++;
         prizeTypes.set(name, entry);
       }
     });
 
-    stats.prizes = Array.from(prizeTypes.entries()).map(
-      ([name, data]: [string, any]) => ({
-        name,
-        total: data.total,
-        given: data.given,
-        remaining: data.total - data.given,
-      })
-    );
+    stats.prizes = Array.from(prizeTypes.entries()).map(([name, data]: [string, any]) => ({
+      name,
+      total: data.total,
+      given: data.given,
+      remaining: data.total - data.given,
+    }));
 
-    // Conversion rate
-    const participantsWithPrizes = participants.filter((p) => p.prize).length;
+    stats.remainingPrizes = stats.prizes.reduce((sum, p) => sum + p.remaining, 0);
     stats.conversionRate = participants.length
-      ? (participantsWithPrizes / participants.length) * 100
+      ? (stats.prizesWon / participants.length) * 100
       : 0;
 
     return stats;

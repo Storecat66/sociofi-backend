@@ -1,17 +1,42 @@
 import { UserModel } from "../../models/user.model";
 import { AuditLogModel } from "../../models/auditLog.model";
 import { User } from "../../db/schema";
-import { sanitizeUser, sanitizeUsers, canManageUser, isValidRole } from "./user.model";
-import { NotFoundError, ForbiddenError, BadRequestError } from "../../utils/http";
+import {
+  sanitizeUser,
+  sanitizeUsers,
+  canManageUser,
+  isValidRole,
+} from "./user.model";
+import {
+  NotFoundError,
+  ForbiddenError,
+  BadRequestError,
+} from "../../utils/http";
 import * as argon2 from "argon2";
 import { Types } from "mongoose";
 import { sendMail } from "../../utils/mail";
+import env from "../../config/env";
 
 export class UserService {
-  async getUsers({ limit = 30, cursor }: { limit?: number; cursor?: string } = {}) {
-    const filter = cursor ? { _id: { $gt: new Types.ObjectId(cursor) } } : {};
-    const users = await UserModel.find(filter).sort({ _id: 1 }).limit(limit + 1).lean<User[]>();
+  async getUsers({
+    limit = 30,
+    cursor,
+  }: { limit?: number; cursor?: string } = {}) {
+    // Base filter to exclude admin users
+    const baseFilter: any = { role: { $ne: "admin" } };
 
+    // Add pagination cursor if provided
+    if (cursor) {
+      baseFilter._id = { $gt: new Types.ObjectId(cursor) };
+    }
+
+    // Fetch users except admins
+    const users = await UserModel.find(baseFilter)
+      .sort({ _id: 1 })
+      .limit(limit + 1)
+      .lean<User[]>();
+
+    // Pagination logic
     const hasNext = users.length > limit;
     const sliced = hasNext ? users.slice(0, -1) : users;
     const nextCursor = hasNext ? users[limit - 1]?._id.toString() : undefined;
@@ -42,8 +67,10 @@ export class UserService {
     }
 
     if (updates.role && updates.role !== targetUser.role) {
-      if (actorRole !== "admin") throw new ForbiddenError("Only admins can change roles");
-      if (!isValidRole(updates.role)) throw new BadRequestError("Invalid role specified");
+      if (actorRole !== "admin")
+        throw new ForbiddenError("Only admins can change roles");
+      if (!isValidRole(updates.role))
+        throw new BadRequestError("Invalid role specified");
       if (id === actorId && updates.role !== "admin")
         throw new ForbiddenError("Cannot demote yourself");
     }
@@ -53,7 +80,7 @@ export class UserService {
         throw new ForbiddenError("Insufficient permissions");
     }
 
-  const previous = { role: targetUser.role, is_active: targetUser.is_active };
+    const previous = { role: targetUser.role, is_active: targetUser.is_active };
     Object.assign(targetUser, updates);
     await targetUser.save();
 
@@ -66,6 +93,39 @@ export class UserService {
     });
 
     // convert document to plain object for sanitizer
+    return sanitizeUser(targetUser.toObject() as User);
+  }
+
+  async assignCampaigns(
+    id: string,
+    promotions: string[],
+    actorId: string,
+    actorRole: string
+  ) {
+    const targetUser = await UserModel.findById(id);
+    if (!targetUser) throw new NotFoundError("User not found");
+
+    // Permission check: only admin or managers who can manage the target role
+    if (actorRole !== 'admin' && !canManageUser(actorRole, targetUser.role)) {
+      throw new ForbiddenError('Insufficient permissions to assign campaigns');
+    }
+
+    const previous = { assigned_promotions: targetUser.assigned_promotions };
+
+    // Ensure unique promotion IDs
+    const uniquePromos = Array.from(new Set(promotions || []));
+
+    targetUser.assigned_promotions = uniquePromos;
+    await targetUser.save();
+
+    await AuditLogModel.create({
+      actor_id: actorId,
+      action: 'assign_campaigns',
+      target_table: 'users',
+      target_id: id,
+      meta: { previous, changes: { assigned_promotions: uniquePromos } },
+    });
+
     return sanitizeUser(targetUser.toObject() as User);
   }
 
@@ -132,15 +192,68 @@ export class UserService {
     });
 
     // sending the mail to the user with credentials
-    
+    const loginUrl = env.CORS_ORIGIN;
     await sendMail({
       to: newUser.email,
-      subject: 'Your New Account Created',
-      text: `Hello ${newUser.name},\n\nYour account has been created successfully.\n\nEmail: ${newUser.email}\nPassword: ${userData.password}\n\nPlease log in and change your password immediately.\n\nBest regards,\nSocio-Fi Team`,
+      subject: "Your New Account Created",
+      html: `
+    <h2>Hello ${newUser.name},</h2>
+    <p>Your account has been created successfully.</p>
+    <p><strong>Email:</strong> ${newUser.email}<br/>
+       <strong>Password:</strong> ${userData.password}</p>
+    <p>
+      You can log in here: <a href="${loginUrl}" target="_blank">${loginUrl}</a>
+    </p>
+    <p>Please log in and change your password immediately.</p>
+    <br/>
+    <p>Best regards,<br/>Socio-Fi Team</p>
+  `,
     });
-   
 
     return sanitizeUser(newUser.toObject() as User);
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+  ) {
+    const user = await UserModel.findById(userId);
+    if (!user) throw new NotFoundError("User not found");
+
+    // ✅ Verify current password
+    const isMatch = await argon2.verify(user.password_hash, currentPassword);
+    if (!isMatch) throw new BadRequestError("Incorrect current password");
+
+    // ✅ Hash new password with secure params
+    const newPasswordHash = await argon2.hash(newPassword, {
+      type: argon2.argon2id,
+      memoryCost: 2 ** 16,
+      timeCost: 3,
+      parallelism: 1,
+    });
+
+    user.password_hash = newPasswordHash;
+    await user.save();
+
+    // Optional: email user about password change
+    try {
+      await sendMail({
+        to: user.email,
+        subject: "Your password has been changed",
+        html: `
+          <h2>Hello ${user.name},</h2>
+          <p>Your Socio-Fi account password was successfully changed.</p>
+          <p>If this wasn't you, please contact support immediately.</p>
+          <br/>
+          <p>Best regards,<br/>Socio-Fi Security Team</p>
+        `,
+      });
+    } catch (emailErr) {
+      console.warn("⚠️ Password change email failed:", emailErr);
+    }
+
+    return sanitizeUser(user.toObject() as User);
   }
 }
 

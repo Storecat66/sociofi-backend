@@ -20,7 +20,7 @@ async function startServer() {
     // Initialize Socket.IO server
     io = new Server(server, {
       cors: {
-        origin: ["https://campaignpanel.socio-fi.com", "http://localhost:5173"],
+        origin: ["https://campaignpanel.socio-fi.com", "http://localhost:5173","http://localhost:5176"],
         methods: ["GET", "POST"],
         credentials: true,
       },

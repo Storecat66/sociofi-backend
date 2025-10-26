@@ -16,6 +16,7 @@ const envSchema = z.object({
   EASY_PROMO_PROMOTION_FETCH_URL: z.string().url(),
   EASY_PROMO_API_KEY: z.string().min(1),
   EASY_PROMO_PARTICIPATION_FETCH_URL: z.string().url(),
+  EASY_PROMO_UNIQUE_PARTICIPATION_FETCH_URL: z.string().url(),
   // SMTP settings for sending emails (used by utils/mail.ts)
   SMTP_HOST: z.string().default('mail.socio-fi.com'),
   SMTP_PORT: z.coerce.number().default(587),

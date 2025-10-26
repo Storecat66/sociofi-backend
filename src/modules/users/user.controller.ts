@@ -21,8 +21,9 @@ const updateUserSchema = z.object({
   }
 );
 
+// Accept string IDs (e.g. Mongo ObjectId) for route params
 const userIdParamsSchema = z.object({
-  id: z.coerce.number().min(1),
+  id: z.string().min(1),
 });
 
 export class UserController {
@@ -92,6 +93,32 @@ export class UserController {
     );
     
     ResponseBuilder.success(res, updatedUser, 'User updated successfully');
+  });
+
+  /**
+   * PATCH /api/users/:id/campaigns
+   * Assign promotions/campaigns to a user
+   */
+  assignCampaigns = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+      ResponseBuilder.error(res, 'Authentication required', 401);
+      return;
+    }
+
+    const { id } = userIdParamsSchema.parse(req.params);
+
+    const payload = z.object({ assigned_promotions: z.array(z.string()).optional() }).parse(req.body);
+
+    const assignedPromotions = payload.assigned_promotions ?? [];
+
+    const updatedUser = await userService.assignCampaigns(
+      id.toString(),
+      assignedPromotions,
+      req.user.id,
+      req.user.role
+    );
+
+    ResponseBuilder.success(res, updatedUser, 'Campaigns updated successfully');
   });
 
   /**
@@ -196,6 +223,33 @@ export class UserController {
 
     ResponseBuilder.success(res, newUser, 'User created successfully');
   });
+
+  /**
+ * POST /api/users/change-password
+ * Change current user's password
+ */
+changePassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    ResponseBuilder.error(res, "Authentication required", 401);
+    return;
+  }
+
+  // Validate input using Zod
+  const validatedData = z
+    .object({
+      currentPassword: z.string().min(6, "Current password required"),
+      newPassword: z.string().min(6, "New password must be at least 6 characters"),
+    })
+    .parse(req.body);
+
+  const { currentPassword, newPassword } = validatedData;
+
+  // Delegate to service
+  const updatedUser = await userService.changePassword(req.user.id, currentPassword, newPassword);
+
+  ResponseBuilder.success(res, updatedUser, "Password changed successfully");
+});
+
 }
 
 export const userController = new UserController();
