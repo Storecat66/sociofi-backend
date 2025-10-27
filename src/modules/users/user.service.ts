@@ -16,6 +16,7 @@ import * as argon2 from "argon2";
 import { Types } from "mongoose";
 import { sendMail } from "../../utils/mail";
 import env from "../../config/env";
+import jwtService from "../../utils/jwt";
 
 export class UserService {
   async getUsers({
@@ -254,6 +255,35 @@ export class UserService {
     }
 
     return sanitizeUser(user.toObject() as User);
+  }
+
+  async impersonateUser(adminId: string, userIdToImpersonate: string) {
+    const adminUser = await UserModel.findById(adminId);
+    if (!adminUser) throw new NotFoundError("Admin user not found");
+    if (adminUser.role !== "admin")
+      throw new ForbiddenError("Only admins can impersonate users");
+
+    const targetUser = await UserModel.findById(userIdToImpersonate).lean<User>();
+    if (!targetUser) throw new NotFoundError("Target user not found");
+
+    const impersonatedToken = jwtService.generateAccessToken({
+      userId: targetUser._id.toString(),
+      email: targetUser.email,
+      role: targetUser.role,
+      tokenVersion: targetUser.token_version,
+    });
+
+    // Log the impersonation action
+    await AuditLogModel.create({
+      actor_id: adminId,
+      action: "impersonate",
+      target_table: "users",
+      target_id: userIdToImpersonate,
+      meta: { adminId, userIdToImpersonate },
+    });
+
+    const santizedUser =  sanitizeUser(targetUser);
+    return { impersontedUser: santizedUser,  impersonatedToken };
   }
 }
 

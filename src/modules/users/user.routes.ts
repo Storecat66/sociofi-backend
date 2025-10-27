@@ -62,6 +62,18 @@ router.post(
 );
 
 /**
+ * @route POST /api/impersonate/:userIdToImpoersonate
+ * @desc Impersonate another user
+ * @access Private (Admin only)
+ */
+router.post(
+  "/impersonate/:userIdToImpoersonate",
+  requireAuth,
+  requireAdmin,
+  userController.impersonateUser
+);
+
+/**
  * @route POST /api/change-password
  * @desc changing the user password
  * @access Private
