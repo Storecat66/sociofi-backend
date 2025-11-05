@@ -17,9 +17,14 @@ const envSchema = z.object({
   EASY_PROMO_API_KEY: z.string().min(1),
   EASY_PROMO_PARTICIPATION_FETCH_URL: z.string().url(),
   EASY_PROMO_UNIQUE_PARTICIPATION_FETCH_URL: z.string().url(),
+  // Number of proxies in front of the app (used for express `trust proxy`)
+  // Set to 1 when behind a single proxy (e.g., Render, Heroku). Set to 0 for direct connections.
+  TRUST_PROXY: z.coerce.number().default(1),
   // SMTP settings for sending emails (used by utils/mail.ts)
   SMTP_HOST: z.string().default('mail.socio-fi.com'),
   SMTP_PORT: z.coerce.number().default(587),
+  // Timeout for SMTP connections in milliseconds
+  SMTP_TIMEOUT: z.coerce.number().default(10000),
   SMTP_USER: z.string().default('noreply@socio-fi.com'),
   SMTP_PASS: z.string().default('n0r3ply@2021'),
   SMTP_SECURE: z.coerce.boolean().default(false),

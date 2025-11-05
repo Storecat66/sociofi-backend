@@ -14,6 +14,11 @@ import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 
 const app = express();
 
+// Configure trust proxy so rate-limit (and other middleware) can correctly read
+// the X-Forwarded-For header when the app is behind a proxy/load balancer.
+// Value is configurable via the TRUST_PROXY env var (default 1).
+app.set("trust proxy", Number(env.TRUST_PROXY) || 1);
+
 // Security middleware
 app.use(
   helmet({
