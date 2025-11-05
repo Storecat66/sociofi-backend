@@ -250,6 +250,7 @@ export class UserService {
           <p>Best regards,<br/>Socio-Fi Security Team</p>
         `,
       });
+      console.log("✅ Password change email sent to user");
     } catch (emailErr) {
       console.warn("⚠️ Password change email failed:", emailErr);
     }
