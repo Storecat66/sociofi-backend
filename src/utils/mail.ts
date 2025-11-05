@@ -1,6 +1,12 @@
 import nodemailer from 'nodemailer';
 import env from '../config/env';
 
+console.log("options with whcih the nodemailer is being configured", {
+  host: env.SMTP_HOST,
+  port: env.SMTP_PORT,
+  secure: env.SMTP_SECURE,
+  user: env.SMTP_USER,
+});
 const transporter = nodemailer.createTransport({
   host: env.SMTP_HOST,
   port: env.SMTP_PORT,
