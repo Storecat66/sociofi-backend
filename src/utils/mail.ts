@@ -1,5 +1,5 @@
-import nodemailer, { Transporter } from "nodemailer";
-import env from "../config/env";
+import { Resend } from 'resend';
+import env from '../config/env';
 
 export interface SendMailOptions {
   to: string;
@@ -9,92 +9,83 @@ export interface SendMailOptions {
   from?: string;
 }
 
-function createTransport(options?: {
-  host?: string;
-  port?: number;
-  secure?: boolean;
-  timeout?: number;
-}): Transporter {
-  return nodemailer.createTransport({
-    host: options?.host ?? env.SMTP_HOST,
-    port: options?.port ?? env.SMTP_PORT,
-    secure: options?.secure ?? env.SMTP_SECURE,
-    auth: {
-      user: env.SMTP_USER,
-      pass: env.SMTP_PASS,
-    },
-    // Timeouts (ms)
-    connectionTimeout: options?.timeout ?? env.SMTP_TIMEOUT,
-    greetingTimeout: options?.timeout ?? env.SMTP_TIMEOUT,
-    socketTimeout: options?.timeout ?? env.SMTP_TIMEOUT,
-  });
-}
+// Initialize Resend with API key
+const resend = new Resend(env.RESEND_API_KEY);
 
-// Primary transporter created from env
-let transporter = createTransport();
-
-// Verify transporter on load and try a fallback to port 587 (STARTTLS) if the
-// primary connection times out. This helps in environments where port 465 is
-// blocked but 587 (STARTTLS) works (common in cloud hosts).
-async function verifyTransporter() {
+// Test Resend connection on startup
+async function verifyConnection() {
   try {
-    console.log("Verifying SMTP transporter with options:", {
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE,
-      user: env.SMTP_USER,
-      timeout: env.SMTP_TIMEOUT,
-    });
-
-    await transporter.verify();
-    console.log("SMTP transporter verified successfully");
+    console.log('🔍 Verifying Resend configuration with API key:', env.RESEND_API_KEY.slice(0, 10) + '...');
+    console.log('✅ Resend initialized with from:', `${env.RESEND_FROM_NAME} <${env.RESEND_FROM_EMAIL}>`);
+    // await checkResendDomain('socio-fi.com');
   } catch (err: any) {
-    console.error("SMTP transporter verification failed:", err?.message || err);
-
-    // If using SMTPS (port 465) and verification timed out, try a STARTTLS
-    // fallback on port 587 (secure: false). Do not overwrite env; just try
-    // to create a working transporter.
-    const isLikelyTimedOut = err?.code === "ETIMEDOUT" || /timeout/i.test(err?.message);
-    if (isLikelyTimedOut && env.SMTP_PORT === 465) {
-      console.log("Attempting fallback to port 587 with STARTTLS (secure: false)...");
-      const fallback = createTransport({ host: env.SMTP_HOST, port: 587, secure: false, timeout: env.SMTP_TIMEOUT });
-      try {
-        await fallback.verify();
-        transporter = fallback;
-        console.log("Fallback SMTP transporter (587 STARTTLS) verified and will be used");
-      } catch (fallbackErr: any) {
-        console.error("Fallback transporter verification also failed:", fallbackErr?.message || fallbackErr);
-      }
-    }
+    console.error('❌ Resend initialization error:', err?.message || err);
   }
 }
 
-// Start verification but don't block module import. This provides helpful
-// diagnostics in logs during startup on Render/production.
-verifyTransporter().catch((e) => console.error("Unexpected error verifying transporter:", e));
+// Call on module load
+verifyConnection().catch((e) => console.error('Unexpected error initializing Resend:', e));
 
 export async function sendMail(opts: SendMailOptions): Promise<void> {
-  console.log("Mail send options (transport):", {
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    user: env.SMTP_USER,
-  });
-
-  const from = opts.from || `Socio-Fi <${env.SMTP_USER}>`;
+  const from = opts.from || `${env.RESEND_FROM_NAME} <${env.RESEND_FROM_EMAIL}>`;
 
   try {
-    await transporter.sendMail({
+    console.log(`📧 Sending email to ${opts.to} with subject: "${opts.subject}"`);
+
+    // Build mail data for Resend
+    const mailData: any = {
       from,
       to: opts.to,
       subject: opts.subject,
-      text: opts.text,
-      html: opts.html,
-    });
+    };
+
+    if (opts.html) mailData.html = opts.html;
+    if (opts.text) mailData.text = opts.text;
+    if (!opts.text && !opts.html) mailData.text = '';
+
+    const { data, error } = await resend.emails.send(mailData);
+
+    if (error) {
+      console.error(`❌ Failed to send email to ${opts.to}:`, error.message);
+      throw new Error(error.message);
+    }
+
+    console.log(`✅ Email sent successfully to ${opts.to} (ID: ${data?.id})`);
   } catch (err: any) {
-    // Provide a clearer error message for common network failures
-    console.error("Failed to send email:", err?.message || err);
-    // rethrow so callers can handle the error
+    console.error(`❌ Resend error while sending email to ${opts.to}:`, err?.message || err);
     throw err;
+  }
+}
+
+export async function checkResendDomain(domainName: string): Promise<void> {
+  try {
+    console.log(`🔍 Checking Resend domain status for "${domainName}"...`);
+    const { data, error } = await resend.domains.list();
+
+    if (error) {
+      console.error('❌ Error fetching Resend domains:', error.message);
+      return;
+    }
+
+    const domain = data?.data?.find((d: any) => d.name === domainName);
+
+    if (!domain) {
+      console.warn(`⚠️ Domain "${domainName}" not found in your Resend account.`);
+      console.log('💡 You can add it via https://resend.com/domains');
+      return;
+    }
+
+    console.log(`📦 Domain found: ${domain.name}`);
+    console.log(`   → Status: ${(domain as any).status || 'unknown'}`);
+
+    // Check if domain is verified (Resend domains return status, not a verified property)
+    if ((domain as any).status !== 'success') {
+      console.log('🕒 Domain pending verification...');
+      console.log('💡 Complete DNS verification in your Resend dashboard at https://resend.com/domains');
+    } else {
+      console.log('✅ Domain already verified and authorized for sending.');
+    }
+  } catch (err: any) {
+    console.error('❌ Error checking Resend domain:', err.message);
   }
 }
