@@ -6,7 +6,7 @@ import { asyncHandler } from '../../middleware/error';
 
 // Validation schemas
 const getParticipantsQuerySchema = z.object({
-  limit: z.coerce.number().min(1).max(100).optional().default(10),
+  limit: z.coerce.number().min(1).optional().default(10),
   page: z.coerce.number().min(1).optional().default(1),
   search: z.string().min(1).optional(),
   sort: z.enum(['created_asc', 'created_desc']).optional().default('created_desc'),
@@ -71,6 +71,7 @@ export class ParticipantsController {
         page: query.page,
         totalPages: result.totalPages,
         total: result.total,
+        totalParticipants: result.totalParticipants,
         limit: query.limit,
         offset: offset,
       },
@@ -131,6 +132,7 @@ export class ParticipantsController {
         page: query.page,
         totalPages: result.totalPages,
         total: result.total,
+        totalParticipants: result.totalParticipants,
         limit: query.limit,
         offset: offset,
       },

@@ -46,8 +46,9 @@ app.use(
 );
 
 // Body parsing middleware
-app.use(express.json({ limit: "100kb" }));
-app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+// Increased limit for export operations that may contain large datasets
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Cookie parser
 app.use(cookieParser());

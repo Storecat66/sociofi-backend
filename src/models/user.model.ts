@@ -15,6 +15,7 @@ export interface IUser extends Document {
   token_version: number;
   created_at: Date;
   updated_at: Date;
+  last_login: Date;
 }
 
 const userSchema = new Schema<IUser>(
@@ -31,6 +32,7 @@ const userSchema = new Schema<IUser>(
     assigned_promotions: { type: [String], default: [] },
     is_active: { type: Boolean, default: true },
     token_version: { type: Number, default: 0 },
+    last_login: { type: Date },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
 );

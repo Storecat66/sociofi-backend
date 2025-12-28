@@ -105,6 +105,7 @@ export interface GetParticipantsResult {
   participants: Participant[];
   hasNext: boolean;
   total: number;
+  totalParticipants: number;
   page: number;
   totalPages: number;
 }
@@ -129,32 +130,57 @@ export class ParticipantsService {
     } = options;
 
     try {
-      // ✅ Fetch all participants (EasyPromos doesn't support filtering, so get all)
-      const response: AxiosResponse<any> = await axios.get(
-        `${env.EASY_PROMO_PARTICIPATION_FETCH_URL}/${promo_id}?format=full`,
-        {
+      // ✅ Fetch ALL participants using cursor-based pagination
+      let allItems: any[] = [];
+      let nextCursor: number | null = null;
+      let hasMorePages = true;
+
+      console.log("Starting to fetch all participants from EasyPromos API...");
+
+      while (hasMorePages) {
+        const url = nextCursor
+          ? `${env.EASY_PROMO_PARTICIPATION_FETCH_URL}/${promo_id}?format=full&next_cursor=${nextCursor}`
+          : `${env.EASY_PROMO_PARTICIPATION_FETCH_URL}/${promo_id}?format=full`;
+
+        const response: AxiosResponse<any> = await axios.get(url, {
           headers: {
             Authorization: `Bearer ${env.EASY_PROMO_API_KEY}`,
             "Content-Type": "application/json",
           },
           timeout: 30000,
-        }
-      );
+        });
 
-      // ✅ Validate response
-      if (!response.data || !Array.isArray(response.data.items)) {
-        console.error("Invalid API response structure:", response.data);
-        throw new Error("Invalid response format from EasyPromos API");
+        // ✅ Validate response
+        if (!response.data || !Array.isArray(response.data.items)) {
+          console.error("Invalid API response structure:", response.data);
+          throw new Error("Invalid response format from EasyPromos API");
+        }
+
+        // Add items from current page
+        const pageItems = response.data.items.filter(
+          (item: any) => item && typeof item === "object"
+        );
+        allItems = [...allItems, ...pageItems];
+
+        // Check if there are more pages
+        nextCursor = response.data.paging?.next_cursor ?? null;
+        hasMorePages = nextCursor !== null;
+
+        console.log(
+          `Fetched ${pageItems.length} items (Total so far: ${allItems.length})`
+        );
       }
 
-      const allItems = response.data.items.filter(
-        (item: any) => item && typeof item === "object"
+      console.log(
+        `✅ Fetched all ${allItems.length} participants from EasyPromos API`
       );
 
-      console.log(`Fetched ${allItems.length} participants from EasyPromos API`);
-      
       if (dateFrom || dateTo) {
-        console.log(`Applying date range filter: ${dateFrom || 'no start'} to ${dateTo || 'no end'}`);
+        console.log(
+          `Applying date range filter: ${dateFrom || "no start"} to ${
+            dateTo || "no end"
+          }`
+        );
       }
 
       // ✅ Step 1: Filter by country, date, and status
@@ -174,7 +200,7 @@ export class ParticipantsService {
         if (dateFrom || dateTo) {
           try {
             const itemDate = new Date(item.created);
-            
+
             if (dateFrom) {
               const fromDate = new Date(dateFrom);
               fromDate.setHours(0, 0, 0, 0); // Start of the day
@@ -182,7 +208,7 @@ export class ParticipantsService {
                 keep = false;
               }
             }
-            
+
             if (dateTo) {
               const toDate = new Date(dateTo);
               toDate.setHours(23, 59, 59, 999); // End of the day
@@ -191,7 +217,12 @@ export class ParticipantsService {
               }
             }
           } catch (error) {
-            console.warn("Invalid date filtering:", item.created, dateFrom, dateTo);
+            console.warn(
+              "Invalid date filtering:",
+              item.created,
+              dateFrom,
+              dateTo
+            );
             keep = false;
           }
         }
@@ -215,37 +246,39 @@ export class ParticipantsService {
           const user = p.user || {};
           const orderValue =
             p.requirement?.data?.[0]?.value?.toLowerCase?.() || "";
-          
+
           const searchableFields = [
             user.email?.toLowerCase(),
-            user.nickname?.toLowerCase(), 
+            user.nickname?.toLowerCase(),
             user.first_name?.toLowerCase(),
             user.last_name?.toLowerCase(),
             user.phone?.toLowerCase(),
             orderValue,
             p.id?.toLowerCase(),
-            user.id?.toLowerCase()
+            user.id?.toLowerCase(),
           ].filter(Boolean); // Remove null/undefined values
 
-          return searchableFields.some(field => 
-            field && field.includes(query)
+          return searchableFields.some(
+            (field) => field && field.includes(query)
           );
         });
       }
 
-      console.log(`After search filtering: ${filteredItems.length} participants`);
+      console.log(
+        `After search filtering: ${filteredItems.length} participants`
+      );
 
       // ✅ Step 3: Manual sort (by created date)
       filteredItems.sort((a: any, b: any) => {
         try {
           const dateA = new Date(a.created).getTime();
           const dateB = new Date(b.created).getTime();
-          
+
           // Handle invalid dates
           if (isNaN(dateA) && isNaN(dateB)) return 0;
           if (isNaN(dateA)) return 1;
           if (isNaN(dateB)) return -1;
-          
+
           return sort === "created_asc" ? dateA - dateB : dateB - dateA;
         } catch (error) {
           console.warn("Error sorting participants:", error);
@@ -261,13 +294,16 @@ export class ParticipantsService {
 
       const paginatedItems = filteredItems.slice(offset, offset + limit);
 
-      console.log(`Pagination: page ${page}/${totalPages}, showing ${paginatedItems.length}/${total} participants`);
+      console.log(
+        `Pagination: page ${page}/${totalPages}, showing ${paginatedItems.length}/${total} participants`
+      );
 
-      // ✅ Step 5: Return sanitized data
+      // ✅ Step 5: Return sanitized data with TOTAL count
       return {
         participants: sanitizeParticipants(paginatedItems),
         hasNext,
-        total,
+        total, // ✅ This now contains the TOTAL number of participants
+        totalParticipants:allItems.length,
         page,
         totalPages,
       };
@@ -290,7 +326,7 @@ export class ParticipantsService {
    * Get participant by ID
    */
   async getParticipantById(
-    participantId: string, 
+    participantId: string,
     promo_id?: string
   ): Promise<Participant | null> {
     try {
@@ -310,10 +346,13 @@ export class ParticipantsService {
     options: Omit<GetParticipantsOptions, "search"> = {},
     promo_id?: string
   ): Promise<GetParticipantsResult> {
-    return this.getParticipants({
-      ...options,
-      search: query,
-    }, promo_id);
+    return this.getParticipants(
+      {
+        ...options,
+        search: query,
+      },
+      promo_id
+    );
   }
 
   /**

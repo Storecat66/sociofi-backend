@@ -56,6 +56,8 @@ export class AuthService {
     // Log login activity
     await this.logActivity(userId, "login", "users", userId, { ip });
 
+    await UserModel.updateOne({ _id: userId }, { $set: { last_login: new Date() } });
+
     // Return a plain object (not a Mongoose document) to match expected type
     return {
       user: {
@@ -68,6 +70,7 @@ export class AuthService {
         assigned_promotions: user.assigned_promotions,
         created_at: user.created_at,
         updated_at: user.updated_at,
+        last_login: user.last_login,
       } as any,
       accessToken,
       refreshToken,
